@@ -127,10 +127,16 @@
           ? result.failed
           : Math.max(0, requested - started);
 
+        const folder = result && result.folder ? result.folder : null;
+
         if (started > 0 && failed === 0) {
-          message.textContent = `Загрузка запущена: ${started} ${started === 1 ? "файл" : "файла(ов)"}`;
+          message.textContent = folder
+            ? `Загрузка запущена: ${started} · ${folder}`
+            : `Загрузка запущена: ${started} ${started === 1 ? "файл" : "файла(ов)"}`;
         } else if (started > 0) {
-          message.textContent = `Загрузка запущена: ${started}/${requested}; ошибок: ${failed}`;
+          message.textContent = folder
+            ? `Загрузка ${started}/${requested}; ошибок: ${failed} · ${folder}`
+            : `Загрузка запущена: ${started}/${requested}; ошибок: ${failed}`;
         } else {
           const reason = result && result.reason ? `: ${result.reason}` : "";
           message.textContent = `Не удалось запустить скачивание${reason}`;
