@@ -95,7 +95,9 @@
 
     if (attachments.length > 0) {
       downloadButton.hidden = false;
-      downloadButton.textContent = `Скачать вложения (${attachments.length})`;
+      downloadButton.textContent = attachments.length === 1
+        ? "Скачать файл"
+        : `Скачать ZIP (${attachments.length})`;
     }
 
     copyButton.addEventListener("click", async () => {
@@ -115,10 +117,13 @@
       }
 
       downloadButton.disabled = true;
-      message.textContent = `Запускаю скачивание: ${attachments.length}`;
+      message.textContent = attachments.length === 1
+        ? "Запускаю скачивание файла"
+        : `Собираю ZIP: ${attachments.length} файлов`;
 
       try {
         const result = await config.onDownload();
+        const mode = result && result.mode ? result.mode : null;
         const started = result && Number.isFinite(result.started) ? result.started : 0;
         const requested = result && Number.isFinite(result.requested)
           ? result.requested
@@ -127,16 +132,17 @@
           ? result.failed
           : Math.max(0, requested - started);
 
-        const folder = result && result.folder ? result.folder : null;
-
-        if (started > 0 && failed === 0) {
+        if (result && result.ok && mode === "zip") {
+          message.textContent = result.filename
+            ? `ZIP готов: ${result.filename}`
+            : "ZIP готов";
+        } else if (result && result.ok && mode === "single") {
+          const folder = result.folder ? result.folder : null;
           message.textContent = folder
-            ? `Загрузка запущена: ${started} · ${folder}`
-            : `Загрузка запущена: ${started} ${started === 1 ? "файл" : "файла(ов)"}`;
-        } else if (started > 0) {
-          message.textContent = folder
-            ? `Загрузка ${started}/${requested}; ошибок: ${failed} · ${folder}`
-            : `Загрузка запущена: ${started}/${requested}; ошибок: ${failed}`;
+            ? `Загрузка запущена · ${folder}`
+            : "Загрузка файла запущена";
+        } else if (started > 0 && failed === 0) {
+          message.textContent = `Загрузка запущена: ${started}`;
         } else {
           const reason = result && result.reason ? `: ${result.reason}` : "";
           message.textContent = `Не удалось запустить скачивание${reason}`;
