@@ -14,29 +14,37 @@ Telegram или pravovedLM.
 
 `#__NEXT_DATA__ -> props.pageProps.reduxState.page.question`
 
-Это устойчивее, чем хэшированные CSS-классы frontend.
+Перед использованием structured data расширение сверяет `question.id` с ID текущего
+URL `/question/<id>/`.
 
-Перед использованием structured data расширение сверяет:
+Если ID не совпадает, данные считаются stale. Расширение не должно сохранять или
+показывать кейс предыдущего вопроса.
 
-`question.id`
-
-с ID текущего URL:
-
-`/question/<id>/`
-
-Если ID не совпадает, данные считаются stale и используется DOM fallback с повторной
-проверкой после client-side navigation.
-
-DOM parsing остаётся резервным механизмом.
+DOM parsing используется как fallback.
 
 Важно: расширение никогда не копирует и не сохраняет весь `__NEXT_DATA__` или Redux
 state. В нормализованную модель попадает только whitelist полей конкретного вопроса.
 
+## Поддерживаемые данные
+
+- ID и URL;
+- заголовок и полный текст вопроса;
+- дата;
+- город;
+- категория;
+- количество ответов;
+- полные ответы юристов с автором и датой;
+- вложения вопроса;
+- локальный статус `SKIP / ANSWER / LEAD`.
+
+Вложения извлекаются structured-first из `question.files.items` и дополняются
+видимыми attachment links из DOM с дедупликацией.
+
 ## Архитектура
 
 - `src/extractor/next-data.js` — primary structured extraction;
-- `src/extractor/metadata.js`, `question.js`, `answers.js`, `attachments.js` — DOM fallback;
-- `src/extractor/selectors.js` — централизованные подтверждённые DOM-селекторы;
+- `src/extractor/metadata.js`, `question.js`, `answers.js`, `attachments.js` — fallback extraction;
+- `src/extractor/selectors.js` — централизованные DOM-селекторы;
 - `src/formatter/` — преобразование внутренней модели кейса в текст;
 - `src/ui/` — Shadow DOM-панель;
 - `src/storage/` — `chrome.storage.local`;
@@ -53,18 +61,30 @@ state. В нормализованную модель попадает толь�
 4. Выберите каталог `pravoved-ext`.
 5. Откройте страницу вида `https://pravoved.ru/question/<id>/`.
 
+## Browser acceptance v0.1-B1
+
+На живом Pravoved подтверждены:
+
+- structured extraction вопроса;
+- несколько ответов;
+- три PDF-вложения на вопросе `5043426`;
+- copy output;
+- сохранение статуса после reload;
+- переход между вопросами без reload;
+- защита от stale structured data;
+- панель в верхнем правом углу без перекрытия чата.
+
 ## Текущий этап
 
-`v0.1-B1 — Structured Pravoved question extraction`
+`v0.1-B2 — Regression coverage and DOM fallback hardening`
 
-Поддерживается извлечение structured question data, ответов и базовых metadata.
-Схема вложений ещё не подтверждена на реальном вопросе с файлами, поэтому ненулевые
-attachments пока помечаются диагностикой как unsupported.
+Следующая задача — закрепить рабочий parser обезличенными regression fixtures/tests и
+усилить DOM fallback.
 
 ## Ограничения
 
-- DOM fallback пока неполный;
-- реальная схема вложений ещё не validated;
+- не хранить сырой HTML авторизованного Pravoved в репозитории;
 - нет backend и внешних API;
 - нет автоматической публикации ответов;
-- нет интеграции с pravovedLM.
+- нет интеграции с pravovedLM;
+- нет React/npm/build-chain.
