@@ -1,40 +1,40 @@
 # ACTIVE TASK
 
-**v0.1-B2 — Regression coverage and DOM fallback hardening**
+**v0.1-C1 — Attachment Download UX**
 
-Этап `v0.1-B1 — Structured Pravoved question extraction` завершён и прошёл
-browser acceptance на живом Pravoved.
+Цель этапа — добавить в панель расширения ручную загрузку всех вложений текущего
+вопроса одной кнопкой.
 
-## Цель следующего этапа
+## UX
 
-Закрепить рабочий parser автоматическими regression fixtures/tests и усилить DOM fallback,
-не добавляя внешние API или автоматическую отправку данных.
+Если у вопроса есть вложения:
 
-## Исходная рабочая архитектура
+`Скачать вложения (N)`
 
-Primary source:
+Если вложений нет, кнопка скрыта.
 
-`#__NEXT_DATA__ -> props.pageProps.reduxState.page.question`
+По нажатию расширение последовательно запускает загрузку каждого файла через
+`chrome.downloads.download()` и сохраняет исходное имя файла.
 
-Fallback:
+## Архитектура
 
-подтверждённые DOM-структуры страницы вопроса.
+- content script передаёт только whitelist attachment metadata;
+- MV3 service worker `src/background.js` выполняет загрузки;
+- разрешены только HTTP(S)-ссылки `pravoved.ru` и его поддоменов;
+- используется `downloads` permission;
+- `saveAs: false`, `conflictAction: "uniquify"`;
+- backend и внешние API не используются.
 
-## Acceptance v0.1-B1
+## Acceptance target
 
-Подтверждено:
+Живой вопрос `5043426`:
 
-- structured extraction вопроса;
-- ответы юристов;
-- HTML -> plain text;
-- три PDF-вложения на вопросе `5043426`;
-- статусы `SKIP / ANSWER / LEAD` сохраняются после reload;
-- переход между вопросами без reload обновляет кейс и не оставляет stale data;
-- панель перенесена в верхний правый угол и не мешает чату.
+- кнопка показывает `Скачать вложения (3)`;
+- по одному нажатию запускаются три PDF;
+- имена файлов сохраняются;
+- существующие Copy / SKIP / ANSWER / LEAD продолжают работать;
+- на вопросе без вложений кнопка отсутствует.
 
-## Ограничения для v0.1-B2
+## Отложенный следующий этап
 
-- не коммитить сырой HTML авторизованного Pravoved;
-- fixtures должны быть обезличенными/минимальными;
-- не добавлять Pravoved API, backend, OpenAI API, Telegram или pravovedLM integration;
-- не менять рабочую semantics статусов и formatter без отдельной причины.
+`v0.1-B2 — Regression coverage and DOM fallback hardening`
