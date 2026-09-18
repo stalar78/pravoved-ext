@@ -112,6 +112,7 @@
       accepted: attachments.length,
       started,
       failed,
+      folder: `Pravoved/${questionFolder}`,
       results
     };
   }
