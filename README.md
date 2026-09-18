@@ -82,12 +82,14 @@ state. В нормализованную модель попадает толь�
 вложения текущего кейса и только URL `pravoved.ru`/поддоменов. Если вложений нет,
 кнопка скрыта.
 
+## Browser acceptance v0.1-C1
+
+Подтверждено ручное скачивание всех вложений одной кнопкой в
+`Downloads/Pravoved/<question_id>/` с сохранением имён файлов.
+
 ## Текущий этап
 
-`v0.1-C1 — Attachment Download UX`
-
-После browser acceptance продолжится отложенный этап
-`v0.1-B2 — Regression coverage and DOM fallback hardening`.
+`v0.1-B2 — Regression coverage and DOM fallback hardening`
 
 ## Ограничения
 
