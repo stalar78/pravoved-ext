@@ -205,8 +205,8 @@
       category: {
         name: utils.normalizeWhitespace(question.category && question.category.name),
         path: question.category && typeof question.category.url === "string"
-          ? question.category.url
-          : null
+          ? [question.category.url]
+          : []
       },
       answersCount: normalizedAnswers.answersCount,
       answers: normalizedAnswers.answers,
