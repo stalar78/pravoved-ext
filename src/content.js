@@ -101,7 +101,11 @@
       document
     });
 
-    mountedQuestionId = targetQuestionId;
+    const structuredDataIsStale = extracted.diagnostics.some((item) => (
+      item && item.field === "NEXT_DATA_STALE" && item.status === "TRUE"
+    ));
+
+    mountedQuestionId = structuredDataIsStale ? null : targetQuestionId;
   }
 
   function startLifecycleWatch() {
