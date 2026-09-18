@@ -19,6 +19,7 @@
     const normalized = String(value)
       .replace(/\r\n/g, "\n")
       .replace(/\u00a0/g, " ")
+      .replace(/^[ \t]+/gm, "")
       .replace(/[ \t]+\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
