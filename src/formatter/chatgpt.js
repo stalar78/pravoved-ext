@@ -8,21 +8,21 @@
       return "NOT_FOUND";
     }
 
-    const parts = [];
     if (category.name) {
-      parts.push(String(category.name));
-    }
-    if (Array.isArray(category.path) && category.path.length > 0) {
-      parts.push(category.path.join(" > "));
+      return utils.displayValue(category.name);
     }
 
-    return utils.displayValue(parts.join(" / "));
+    if (Array.isArray(category.path) && category.path.length > 0) {
+      return utils.displayValue(category.path.join(" > "));
+    }
+
+    return "NOT_FOUND";
   }
 
   function formatAnswer(answer, index) {
     const item = answer || {};
     return [
-      `--- Ответ ${index} ---`,
+      `--- Ответ ${index + 1} ---`,
       "Юрист:",
       utils.displayValue(item.author),
       "Дата/время:",
@@ -37,7 +37,7 @@
     const name = utils.displayValue(item.name);
     const url = item.url ? ` — ${item.url}` : "";
     const type = item.type ? ` [${item.type}]` : "";
-    return `${index}. ${name}${type}${url}`;
+    return `${index + 1}. ${name}${type}${url}`;
   }
 
   function formatForChatGpt(caseData) {
