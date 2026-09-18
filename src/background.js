@@ -88,7 +88,7 @@
     }
 
     const started = results.filter((item) => item.ok).length;
-    const failed = results.length - started;
+    const failed = input.length - started;
 
     return {
       ok: started > 0,
