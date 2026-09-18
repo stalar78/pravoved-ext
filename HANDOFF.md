@@ -1,10 +1,10 @@
 # HANDOFF
 
-## Этап
+## Завершённый этап
 
 `v0.1-B1 — Structured Pravoved question extraction`
 
-## Основное архитектурное решение
+## Архитектурное решение
 
 Primary source:
 
@@ -19,7 +19,7 @@ Structured data используется только после проверк�
 
 ## Что реализовано
 
-- Новый модуль `src/extractor/next-data.js`.
+- `src/extractor/next-data.js` как primary extractor.
 - Извлечение question ID из URL.
 - Безопасный `JSON.parse` для `#__NEXT_DATA__`.
 - Whitelist normalization вопроса.
@@ -34,70 +34,60 @@ Structured data используется только после проверк�
   - category;
   - answersCount;
   - answers;
+  - attachments;
   - raw platform state.
 - Проверка `NEXT_DATA_ID_MATCH`.
 - Диагностика `NEXT_DATA_STALE`.
-- DOM fallback при отсутствии/ошибке/stale structured data.
 - Lifecycle watcher для client-side navigation.
 - Повторная extraction, пока `__NEXT_DATA__` остаётся stale.
-- Сохранение существующих SKIP / ANSWER / LEAD и formatter contract.
+- Сохранение существующих `SKIP / ANSWER / LEAD`.
+- Formatter `=== PRAVOVED CASE ===`.
+- Панель перенесена из нижнего правого угла в верхний правый.
 
 ## Attachments
 
-После browser acceptance найден реальный вопрос `5043426` с тремя PDF-вложениями.
-
-Добавлены два уровня извлечения:
+Используются два уровня:
 
 1. whitelist normalization `question.files.items` из `__NEXT_DATA__`;
 2. fallback по видимым attachment links внутри DOM question root.
 
 Результаты объединяются с дедупликацией по URL/имени.
 
-Схема считается реализованной как best-effort и требует повторного browser acceptance
-на вопросе `5043426`.
+## Live browser acceptance
 
-## Контрольный реальный кейс
-
-Question ID:
-
-`5043324`
-
-Ожидаемые данные:
-
-- город: Барнаул;
-- категория: Автомобильное право;
-- answersCount: 1;
-- один ответ;
-- автор ответа: Мирошкина Надежда;
-- question attachments: 0.
-
-## Browser acceptance
-
-Вопрос `5043426` проверен на живом Pravoved.
+Проверен вопрос `5043426`.
 
 Подтверждено:
 
-- ID = `5043426`;
-- title/date/city/category извлекаются корректно;
+- ID/title/date/city/category;
 - answersCount = 3;
-- три ответа извлекаются полностью;
-- нумерация ответов начинается с 1;
-- категория выводится без raw URL;
-- три PDF-вложения извлекаются:
-  - `Возражения_на_отзыв_.pdf`;
-  - `Отзыв_на_исковое_заявление_обезличен~.pdf`;
-  - `Исковое заявление_обезличенное.pdf`;
-- attachment URLs ведут на `/upload/<id>/`.
+- три полных ответа;
+- one-based numbering;
+- три PDF-вложения;
+- attachment URLs вида `/upload/<id>/`;
+- copy formatter output;
+- статусы сохраняются после F5/reload;
+- переход на другой вопрос без reload обновляет кейс;
+- stale data предыдущего вопроса не остаётся;
+- верхнее правое положение панели не мешает чату.
 
-## Что ещё требуется
+Дополнительно ранее использовался контрольный вопрос `5043324` без вложений.
 
-1. Проверить сохранение статуса `SKIP / ANSWER / LEAD` после reload.
-2. Проверить переход между двумя вопросами без reload.
-3. Реализовать полноценный DOM fallback остальных полей на подтверждённых селекторах.
+## Следующий этап
 
-## Scope вне этапа
+`v0.1-B2 — Regression coverage and DOM fallback hardening`
 
-Не добавлялись:
+Приоритет:
+
+1. создать обезличенные минимальные fixtures без сырых данных авторизованного кабинета;
+2. добавить regression tests для structured extraction;
+3. закрепить кейсы: без файлов / несколько ответов / несколько файлов / stale ID;
+4. усилить DOM fallback для основных полей;
+5. не менять working contract formatter/status storage без необходимости.
+
+## Scope вне проекта на текущем этапе
+
+Не добавлены:
 
 - Pravoved API;
 - backend;
@@ -106,9 +96,3 @@ Question ID:
 - pravovedLM integration;
 - auto-posting;
 - React/npm/build-chain.
-
-
-## UI acceptance finding
-
-Панель перенесена из нижнего правого угла в верхний правый (`top: 96px`), чтобы не
-мешать интерфейсу чата Pravoved.
