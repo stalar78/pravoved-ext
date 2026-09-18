@@ -11,7 +11,8 @@
         position: fixed;
         z-index: 2147483647;
         right: 16px;
-        bottom: 16px;
+        top: 96px;
+        bottom: auto;
         width: 300px;
         color: #172033;
         background: #ffffff;
