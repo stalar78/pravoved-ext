@@ -5,6 +5,29 @@
   let mountedQuestionId = null;
   let lifecycleStarted = false;
 
+  function mergeAttachments(primary, fallback) {
+    const result = [];
+    const seen = new Set();
+
+    [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])]
+      .forEach((item) => {
+        if (!item) {
+          return;
+        }
+
+        const key = item.url || item.name;
+        if (!key || seen.has(key)) {
+          return;
+        }
+
+        seen.add(key);
+        result.push(item);
+      });
+
+    return result;
+  }
+
+
   function extractFallbackCase(documentObject, locationObject) {
     const metadata = extractor.extractMetadata(locationObject);
     const question = extractor.extractQuestion(documentObject);
@@ -45,6 +68,12 @@
     if (extractor.extractNextDataCase) {
       const structured = extractor.extractNextDataCase(documentObject, locationObject);
       if (structured.matched && structured.caseData) {
+        const domAttachments = extractor.extractAttachments(documentObject);
+        structured.caseData.attachments = mergeAttachments(
+          structured.caseData.attachments,
+          domAttachments.attachments
+        );
+
         return {
           caseData: structured.caseData,
           diagnostics: [
@@ -52,7 +81,8 @@
               field: "source",
               status: "NEXT_DATA"
             },
-            ...structured.diagnostics
+            ...structured.diagnostics,
+            ...domAttachments.diagnostics
           ]
         };
       }
