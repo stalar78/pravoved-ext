@@ -1,49 +1,70 @@
 # Pravoved Case Assistant
 
-Минимальный каркас Chrome Extension для рабочего процесса на pravoved.ru. На этапе
-v0.1-A расширение создаёт UI-панель на странице и подготавливает модель кейса,
-форматирование для ChatGPT и локальное хранение статуса вопроса.
+Chrome Extension Manifest V3 для рабочего процесса на pravoved.ru.
 
-## Назначение
+Расширение извлекает данные конкретного вопроса, формирует структурированный блок для
+ChatGPT и хранит локальный статус кейса `SKIP / ANSWER / LEAD`.
 
-Будущая версия должна извлекать данные конкретного вопроса Pravoved и одной кнопкой
-формировать структурированный текст для передачи в ChatGPT. Расширение не отправляет
-данные наружу и не взаимодействует с API Pravoved, OpenAI или Telegram.
+Расширение не отправляет данные наружу и не взаимодействует с API Pravoved, OpenAI,
+Telegram или pravovedLM.
+
+## Extraction strategy
+
+Основной источник данных — структурированное состояние страницы Next.js:
+
+`#__NEXT_DATA__ -> props.pageProps.reduxState.page.question`
+
+Это устойчивее, чем хэшированные CSS-классы frontend.
+
+Перед использованием structured data расширение сверяет:
+
+`question.id`
+
+с ID текущего URL:
+
+`/question/<id>/`
+
+Если ID не совпадает, данные считаются stale и используется DOM fallback с повторной
+проверкой после client-side navigation.
+
+DOM parsing остаётся резервным механизмом.
+
+Важно: расширение никогда не копирует и не сохраняет весь `__NEXT_DATA__` или Redux
+state. В нормализованную модель попадает только whitelist полей конкретного вопроса.
 
 ## Архитектура
 
-- `src/extractor/` — извлечение данных из DOM и диагностические результаты;
-- `src/extractor/selectors.js` — единая точка для подтверждённых селекторов;
+- `src/extractor/next-data.js` — primary structured extraction;
+- `src/extractor/metadata.js`, `question.js`, `answers.js`, `attachments.js` — DOM fallback;
+- `src/extractor/selectors.js` — централизованные подтверждённые DOM-селекторы;
 - `src/formatter/` — преобразование внутренней модели кейса в текст;
-- `src/ui/` — Shadow DOM-панель и действия пользователя;
-- `src/storage/` — `chrome.storage.local`, статусы по `question_id`;
-- `src/utils/` — нормализация и отображение текстовых значений;
-- `src/content.js` — orchestration: extraction → status → UI.
+- `src/ui/` — Shadow DOM-панель;
+- `src/storage/` — `chrome.storage.local`;
+- `src/utils/` — нормализация текста и HTML -> plain text;
+- `src/content.js` — orchestration и lifecycle SPA-навигации.
 
-Файлы подключаются напрямую через `content_scripts` в `manifest.json`; npm и build-chain
-не требуются. Общий namespace `PravovedExt` позволяет сохранять модульные границы при
-запуске обычных content scripts.
+Файлы подключаются напрямую через `content_scripts` без npm и build-chain.
 
-## Установка unpacked extension в Chrome
+## Установка
 
 1. Откройте `chrome://extensions`.
-2. Включите **Developer mode / Режим разработчика**.
-3. Нажмите **Load unpacked / Загрузить распакованное расширение**.
-4. Выберите каталог проекта `pravoved-ext`.
-5. Откройте или обновите страницу на `pravoved.ru`.
+2. Включите Developer mode.
+3. Нажмите Load unpacked.
+4. Выберите каталог `pravoved-ext`.
+5. Откройте страницу вида `https://pravoved.ru/question/<id>/`.
 
-## Текущие ограничения
+## Текущий этап
 
-- Селекторы Pravoved намеренно пустые: проект не угадывает DOM-разметку.
-- Поэтому поля кейса, кроме URL, пока имеют значение `null`, пустые массивы или
-  отображаются как `NOT_FOUND`.
-- Статус сохраняется только когда будет найден `question_id`.
-- Вложения не скачиваются автоматически.
-- Нет backend, OpenAI API, Telegram, pravovedLM и автопубликации ответов.
+`v0.1-B1 — Structured Pravoved question extraction`
 
-## Следующий этап: v0.1-B
+Поддерживается извлечение structured question data, ответов и базовых metadata.
+Схема вложений ещё не подтверждена на реальном вопросе с файлами, поэтому ненулевые
+attachments пока помечаются диагностикой как unsupported.
 
-Нужно предоставить реальные DOM/HTML-фрагменты страницы вопроса Pravoved (включая
-вопрос, метаданные, ответы и вложения), желательно с примерами нескольких вариантов
-разметки. После этого будут заполнены `src/extractor/selectors.js` и реализованы
-адресные DOM-парсеры с проверкой диагностического режима.
+## Ограничения
+
+- DOM fallback пока неполный;
+- реальная схема вложений ещё не validated;
+- нет backend и внешних API;
+- нет автоматической публикации ответов;
+- нет интеграции с pravovedLM.
