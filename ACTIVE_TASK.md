@@ -23,4 +23,4 @@ DOM parsing:
 - В нормализованную модель попадают только whitelist-поля конкретного вопроса.
 - HTML вопроса и ответов преобразуется в plain text.
 - SPA-навигация не должна оставлять в панели данные предыдущего вопроса.
-- Attachments извлекаются structured-first с DOM fallback; требуется acceptance на реальном вопросе 5043426 с тремя PDF.
+- Attachments извлекаются structured-first с DOM fallback; live acceptance на вопросе 5043426 с тремя PDF пройден.
