@@ -74,24 +74,157 @@
     return null;
   }
 
-  function normalizeFiles(files, diagnostics, field) {
+  function firstNonEmptyString(objects, keys) {
+    for (const object of objects) {
+      if (!object || typeof object !== "object") {
+        continue;
+      }
+
+      for (const key of keys) {
+        const value = object[key];
+        if (typeof value === "string" && value.trim()) {
+          return value.trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeAttachmentUrl(rawUrl, locationObject) {
+    if (!rawUrl) {
+      return null;
+    }
+
+    const base = locationObject && typeof locationObject.origin === "string"
+      ? locationObject.origin
+      : "https://pravoved.ru";
+
+    try {
+      return new URL(rawUrl, base).href;
+    } catch (_) {
+      return rawUrl;
+    }
+  }
+
+  function guessAttachmentType(name, explicitType) {
+    const type = utils.normalizeWhitespace(explicitType);
+    if (type) {
+      return type;
+    }
+
+    const normalizedName = utils.normalizeWhitespace(name);
+    if (!normalizedName) {
+      return null;
+    }
+
+    const match = normalizedName.match(/\.([a-z0-9]{1,10})$/i);
+    return match ? match[1].toLowerCase() : null;
+  }
+
+  function normalizeFiles(files, diagnostics, field, locationObject) {
     if (!files || typeof files !== "object") {
       diagnostics.push(diag(field, "OK", "No files container"));
       return [];
     }
 
-    const total = Number(files.total || 0);
-    if (total === 0) {
+    const declaredTotal = Number(files.total || 0);
+    const rawItems = files.items;
+
+    if (declaredTotal === 0 && (!rawItems || Object.keys(rawItems).length === 0)) {
       diagnostics.push(diag(field, "OK"));
       return [];
     }
 
+    const items = Array.isArray(rawItems)
+      ? rawItems
+      : rawItems && typeof rawItems === "object"
+        ? Object.values(rawItems)
+        : [];
+
+    const normalized = items.map((item) => {
+      const sources = [
+        item,
+        item && item.file,
+        item && item.attachment,
+        item && item.data
+      ];
+
+      const name = firstNonEmptyString(sources, [
+        "name",
+        "filename",
+        "fileName",
+        "originalName",
+        "original_name",
+        "title",
+        "label"
+      ]);
+
+      const rawUrl = firstNonEmptyString(sources, [
+        "url",
+        "href",
+        "uri",
+        "link",
+        "downloadUrl",
+        "download_url",
+        "path",
+        "src"
+      ]);
+
+      const explicitType = firstNonEmptyString(sources, [
+        "type",
+        "mime",
+        "mimeType",
+        "mime_type",
+        "contentType",
+        "content_type",
+        "extension",
+        "ext"
+      ]);
+
+      const url = normalizeAttachmentUrl(rawUrl, locationObject);
+      const resolvedName = name || (() => {
+        if (!url) {
+          return null;
+        }
+        try {
+          return decodeURIComponent(new URL(url).pathname.split("/").pop() || "") || null;
+        } catch (_) {
+          return null;
+        }
+      })();
+
+      if (!resolvedName && !url) {
+        return null;
+      }
+
+      return {
+        name: utils.normalizeWhitespace(resolvedName),
+        url,
+        type: guessAttachmentType(resolvedName, explicitType)
+      };
+    }).filter(Boolean);
+
+    const expectedTotal = Number.isFinite(declaredTotal) && declaredTotal > 0
+      ? declaredTotal
+      : items.length;
+
+    let status = "OK";
+    if (expectedTotal > 0 && normalized.length === 0) {
+      status = "UNSUPPORTED";
+    } else if (expectedTotal > normalized.length) {
+      status = "PARTIAL";
+    }
+
     diagnostics.push(diag(
       field,
-      "UNSUPPORTED",
-      "Attachment item schema has not yet been validated on a real question with files"
+      status,
+      status === "OK"
+        ? null
+        : `Declared ${expectedTotal}, normalized ${normalized.length}`
     ));
-    return [];
+
+    return normalized;
   }
 
   function normalizeAnswers(question, diagnostics) {
@@ -107,7 +240,8 @@
       const attachments = normalizeFiles(
         answer && answer.files,
         answerDiagnostics,
-        `answer.${answer && answer.id ? answer.id : "unknown"}.attachments`
+        `answer.${answer && answer.id ? answer.id : "unknown"}.attachments`,
+        null
       );
       diagnostics.push(...answerDiagnostics);
 
@@ -191,7 +325,7 @@
     }
 
     const normalizedAnswers = normalizeAnswers(question, diagnostics);
-    const attachments = normalizeFiles(question.files, diagnostics, "attachments");
+    const attachments = normalizeFiles(question.files, diagnostics, "attachments", locationObject);
     const publishedAt = unixSecondsToIso(question.datePublish)
       || unixSecondsToIso(question.dateCreate);
 
