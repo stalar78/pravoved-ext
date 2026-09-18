@@ -44,12 +44,17 @@ Structured data используется только после проверк�
 
 ## Attachments
 
-На имеющемся реальном HTML вопроса `question.files.total === 0`.
+После browser acceptance найден реальный вопрос `5043426` с тремя PDF-вложениями.
 
-Поэтому ненулевая схема `files.items` ещё не считается подтверждённой.
+Добавлены два уровня извлечения:
 
-Если `files.total > 0`, extractor не падает, а возвращает пустой массив и diagnostic
-`UNSUPPORTED`.
+1. whitelist normalization `question.files.items` из `__NEXT_DATA__`;
+2. fallback по видимым attachment links внутри DOM question root.
+
+Результаты объединяются с дедупликацией по URL/имени.
+
+Схема считается реализованной как best-effort и требует повторного browser acceptance
+на вопросе `5043426`.
 
 ## Контрольный реальный кейс
 
@@ -68,13 +73,11 @@ Question ID:
 
 ## Что ещё требуется
 
-1. Browser acceptance на живой странице Pravoved.
-2. Проверить copy output.
+1. Повторный browser acceptance вопроса `5043426`: проверить три PDF-вложения.
+2. Проверить copy output после исправления one-based numbering/category.
 3. Проверить сохранение статуса.
 4. Проверить переход между двумя вопросами без reload.
-5. Получить реальный вопрос с одним или несколькими вложениями.
-6. После этого реализовать и проверить attachments schema.
-7. Реализовать полноценный DOM fallback на подтверждённых селекторах.
+5. Реализовать полноценный DOM fallback остальных полей на подтверждённых селекторах.
 
 ## Scope вне этапа
 
@@ -87,3 +90,9 @@ Question ID:
 - pravovedLM integration;
 - auto-posting;
 - React/npm/build-chain.
+
+
+## UI acceptance finding
+
+Панель перенесена из нижнего правого угла в верхний правый (`top: 96px`), чтобы не
+мешать интерфейсу чата Pravoved.
