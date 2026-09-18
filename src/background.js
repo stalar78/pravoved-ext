@@ -20,7 +20,7 @@
   function sanitizeFilename(value, fallback) {
     const raw = typeof value === "string" ? value.trim() : "";
     const cleaned = raw
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+      .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, "_")
       .replace(/[. ]+$/g, "")
       .slice(0, 180);
 
