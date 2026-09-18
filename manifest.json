@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Pravoved Case Assistant",
+  "version": "0.1.0",
+  "description": "Каркас расширения для извлечения кейсов с pravoved.ru.",
+  "permissions": [
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pravoved.ru/*",
+        "https://www.pravoved.ru/*"
+      ],
+      "js": [
+        "src/utils/text.js",
+        "src/extractor/selectors.js",
+        "src/extractor/metadata.js",
+        "src/extractor/question.js",
+        "src/extractor/answers.js",
+        "src/extractor/attachments.js",
+        "src/formatter/chatgpt.js",
+        "src/storage/status.js",
+        "src/ui/panel.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
