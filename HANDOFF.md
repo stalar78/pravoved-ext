@@ -96,3 +96,39 @@ Structured data используется только после проверк�
 - pravovedLM integration;
 - auto-posting;
 - React/npm/build-chain.
+
+
+## v0.1-C1 — Attachment Download UX
+
+Новая feature-ветка добавляет ручную загрузку вложений текущего вопроса.
+
+### Реализовано
+
+- `downloads` permission в Manifest V3;
+- service worker `src/background.js`;
+- кнопка `Скачать вложения (N)` в Shadow DOM-панели;
+- кнопка скрыта, если `attachments.length === 0`;
+- content script отправляет service worker только `name/url/type` текущих вложений;
+- service worker принимает только HTTP(S) URL на `pravoved.ru`/поддомены;
+- имена файлов очищаются только от символов, запрещённых файловой системой;
+- загрузки запускаются последовательно;
+- файлы группируются в `Downloads/Pravoved/<question_id>/`;
+- конфликт имён решается через `uniquify`;
+- при частичной ошибке остальные загрузки продолжаются;
+- статусные кнопки выбираются явно и не конфликтуют с download action.
+
+### Browser acceptance
+
+Проверено на живом Pravoved.
+
+Подтверждено:
+
+- кнопка показывает фактическое число вложений;
+- одно нажатие запускает загрузку всех файлов;
+- файлы сохраняются с ожидаемыми именами;
+- создаётся папка `Downloads/Pravoved/<question_id>/`;
+- лишних Save As диалогов нет;
+- Copy / SKIP / ANSWER / LEAD не сломаны;
+- на вопросах без файлов download-кнопка скрыта.
+
+Этап `v0.1-C1` завершён.

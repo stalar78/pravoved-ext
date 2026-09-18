@@ -28,6 +28,64 @@
   }
 
 
+  function requestAttachmentDownloads(caseData) {
+    const data = caseData || {};
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+
+    if (attachments.length === 0) {
+      return Promise.resolve({
+        ok: false,
+        requested: 0,
+        started: 0,
+        failed: 0,
+        reason: "NO_ATTACHMENTS"
+      });
+    }
+
+    if (!global.chrome || !global.chrome.runtime || !global.chrome.runtime.sendMessage) {
+      return Promise.resolve({
+        ok: false,
+        requested: attachments.length,
+        started: 0,
+        failed: attachments.length,
+        reason: "RUNTIME_UNAVAILABLE"
+      });
+    }
+
+    return new Promise((resolve) => {
+      global.chrome.runtime.sendMessage({
+        type: "PRAVOVED_DOWNLOAD_ATTACHMENTS",
+        questionId: data.id || null,
+        attachments: attachments.map((item) => ({
+          name: item && item.name ? String(item.name) : null,
+          url: item && item.url ? String(item.url) : null,
+          type: item && item.type ? String(item.type) : null
+        }))
+      }, (response) => {
+        const error = global.chrome.runtime.lastError;
+
+        if (error) {
+          resolve({
+            ok: false,
+            requested: attachments.length,
+            started: 0,
+            failed: attachments.length,
+            reason: error.message || "DOWNLOAD_MESSAGE_FAILED"
+          });
+          return;
+        }
+
+        resolve(response || {
+          ok: false,
+          requested: attachments.length,
+          started: 0,
+          failed: attachments.length,
+          reason: "EMPTY_DOWNLOAD_RESPONSE"
+        });
+      });
+    });
+  }
+
   function extractFallbackCase(documentObject, locationObject) {
     const metadata = extractor.extractMetadata(locationObject);
     const question = extractor.extractQuestion(documentObject);
@@ -128,6 +186,7 @@
       diagnostics: extracted.diagnostics,
       formatter: root.formatter.formatForChatGpt,
       onStatus: (status) => root.storage.setStatus(extracted.caseData.id, status),
+      onDownload: () => requestAttachmentDownloads(extracted.caseData),
       document
     });
 
@@ -157,6 +216,7 @@
   }
 
   root.extractCase = extractCase;
+  root.requestAttachmentDownloads = requestAttachmentDownloads;
   root.initializeForCurrentQuestion = initializeForCurrentQuestion;
 
   initializeForCurrentQuestion()

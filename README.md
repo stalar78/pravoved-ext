@@ -74,16 +74,27 @@ state. В нормализованную модель попадает толь�
 - защита от stale structured data;
 - панель в верхнем правом углу без перекрытия чата.
 
+## Скачивание вложений
+
+На этапе `v0.1-C1` добавляется ручная кнопка `Скачать вложения (N)`.
+
+Загрузки выполняет MV3 service worker через Chrome Downloads API и складывает файлы в `Downloads/Pravoved/<question_id>/`. Используются только
+вложения текущего кейса и только URL `pravoved.ru`/поддоменов. Если вложений нет,
+кнопка скрыта.
+
+## Browser acceptance v0.1-C1
+
+Подтверждено ручное скачивание всех вложений одной кнопкой в
+`Downloads/Pravoved/<question_id>/` с сохранением имён файлов.
+
 ## Текущий этап
 
 `v0.1-B2 — Regression coverage and DOM fallback hardening`
 
-Следующая задача — закрепить рабочий parser обезличенными regression fixtures/tests и
-усилить DOM fallback.
-
 ## Ограничения
 
 - не хранить сырой HTML авторизованного Pravoved в репозитории;
+- единственный дополнительный Chrome permission для v0.1-C1 — `downloads`;
 - нет backend и внешних API;
 - нет автоматической публикации ответов;
 - нет интеграции с pravovedLM;
