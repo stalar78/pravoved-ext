@@ -27,6 +27,8 @@
       button { border: 1px solid #b8c2d4; border-radius: 6px; padding: 7px 5px; background: #f8fafc; color: #172033; cursor: pointer; font: inherit; }
       button:hover:not(:disabled) { background: #eef2ff; }
       button.primary { grid-column: 1 / -1; background: #2563eb; border-color: #2563eb; color: #fff; }
+      button.download { grid-column: 1 / -1; }
+      button[hidden] { display: none; }
       button:disabled { cursor: not-allowed; opacity: .55; }
       .message { min-height: 18px; padding: 0 12px 8px; color: #2563eb; }
       details { border-top: 1px solid #e5e7eb; padding: 8px 12px 10px; }
@@ -53,6 +55,7 @@
         <div class="case-status" data-role="case-status">Проверка кейса…</div>
         <div class="actions">
           <button class="primary" data-action="copy">Скопировать для ChatGPT</button>
+          <button class="download" data-action="download" hidden>Скачать вложения</button>
           <button data-action="SKIP">SKIP</button>
           <button data-action="ANSWER">ANSWER</button>
           <button data-action="LEAD">LEAD</button>
@@ -70,8 +73,14 @@
     const message = shadow.querySelector('[data-role="message"]');
     const diagnostics = shadow.querySelector('[data-role="diagnostics"]');
     const copyButton = shadow.querySelector('[data-action="copy"]');
-    const statusButtons = [...shadow.querySelectorAll("button[data-action]:not([data-action=copy])")];
+    const downloadButton = shadow.querySelector('[data-action="download"]');
+    const statusButtons = [
+      shadow.querySelector('[data-action="SKIP"]'),
+      shadow.querySelector('[data-action="ANSWER"]'),
+      shadow.querySelector('[data-action="LEAD"]')
+    ].filter(Boolean);
     const caseData = config.caseData || {};
+    const attachments = Array.isArray(caseData.attachments) ? caseData.attachments : [];
 
     const idLabel = caseData.id ? `ID: ${caseData.id}` : "ID: NOT_FOUND";
     caseStatus.textContent = `${idLabel} · статус: ${caseData.status || "не установлен"}`;
@@ -84,6 +93,11 @@
       });
     }
 
+    if (attachments.length > 0) {
+      downloadButton.hidden = false;
+      downloadButton.textContent = `Скачать вложения (${attachments.length})`;
+    }
+
     copyButton.addEventListener("click", async () => {
       const text = config.formatter(caseData);
       try {
@@ -92,6 +106,39 @@
       } catch (error) {
         message.textContent = "Не удалось скопировать";
         console.warn("Pravoved extension clipboard error", error);
+      }
+    });
+
+    downloadButton.addEventListener("click", async () => {
+      if (attachments.length === 0 || typeof config.onDownload !== "function") {
+        return;
+      }
+
+      downloadButton.disabled = true;
+      message.textContent = `Запускаю скачивание: ${attachments.length}`;
+
+      try {
+        const result = await config.onDownload();
+        const started = result && Number.isFinite(result.started) ? result.started : 0;
+        const requested = result && Number.isFinite(result.requested)
+          ? result.requested
+          : attachments.length;
+        const failed = result && Number.isFinite(result.failed)
+          ? result.failed
+          : Math.max(0, requested - started);
+
+        if (started > 0 && failed === 0) {
+          message.textContent = `Загрузка запущена: ${started} ${started === 1 ? "файл" : "файла(ов)"}`;
+        } else if (started > 0) {
+          message.textContent = `Загрузка запущена: ${started}/${requested}; ошибок: ${failed}`;
+        } else {
+          message.textContent = "Не удалось запустить скачивание";
+        }
+      } catch (error) {
+        message.textContent = "Не удалось запустить скачивание";
+        console.warn("Pravoved extension download error", error);
+      } finally {
+        downloadButton.disabled = false;
       }
     });
 
