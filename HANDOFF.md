@@ -1,60 +1,98 @@
 # HANDOFF
 
-## Этап
+## Завершённый этап
 
-`v0.1-A — Extension scaffold and architecture`
+`v0.1-B1 — Structured Pravoved question extraction`
 
-## Что создано
+## Архитектурное решение
 
-- Минимальный Manifest V3 с единственным permission `storage`.
-- Content script только для `pravoved.ru` и `www.pravoved.ru`.
-- Разделённые зоны extraction, selectors, formatter, UI, storage и utilities.
-- Внутренняя модель кейса с полями вопроса, метаданных, ответов, вложений и статуса.
-- Shadow DOM-панель с кнопками копирования и статусов `SKIP / ANSWER / LEAD`.
-- Форматтер `=== PRAVOVED CASE ===` для передачи текста в ChatGPT.
-- Диагностический блок с перечнем `NOT_FOUND` полей.
-- Документация этапа в `README.md` и `ACTIVE_TASK.md`.
+Primary source:
 
-## Изменённые/созданные файлы
+`#__NEXT_DATA__ -> props.pageProps.reduxState.page.question`
 
-- `manifest.json`
-- `src/content.js`
-- `src/extractor/{selectors,metadata,question,answers,attachments}.js`
-- `src/formatter/chatgpt.js`
-- `src/storage/status.js`
-- `src/ui/panel.js`
-- `src/utils/text.js`
-- `README.md`
-- `ACTIVE_TASK.md`
-- `HANDOFF.md`
+DOM остаётся fallback.
 
-## Что реально работает
+Structured data используется только после проверки, что `question.id` совпадает с ID
+из текущего `location.pathname`.
 
-- Расширение устанавливается как unpacked Manifest V3.
-- На совпадающей странице создаётся изолированная Shadow DOM-панель.
-- URL попадает во внутреннюю модель.
-- Кнопка копирования формирует и копирует структурированный текст с `NOT_FOUND` для
-  ещё не извлечённых полей.
-- API статусов использует `chrome.storage.local` и сохраняет `{ status, timestamp }`
-  по ключу `pravoved.status.<question_id>`.
-- При повторном открытии страницы сохранённый статус читается, если найден ID.
+Весь `__NEXT_DATA__` / Redux state не копируется, не логируется и не сохраняется.
 
-## Что пока является заглушкой
+## Что реализовано
 
-- Все DOM-селекторы пусты и не являются рабочими селекторами Pravoved.
-- Извлечение ID, заголовка, текста вопроса, даты, города, категории, ответов и
-  вложений возвращает `null`/пустые массивы и диагностический `NOT_FOUND`.
-- Статусные кнопки отключены до появления `question_id`.
+- `src/extractor/next-data.js` как primary extractor.
+- Извлечение question ID из URL.
+- Безопасный `JSON.parse` для `#__NEXT_DATA__`.
+- Whitelist normalization вопроса.
+- HTML -> plain text для вопроса и ответов.
+- Нормализация:
+  - ID;
+  - URL;
+  - title;
+  - questionText;
+  - publishedAt;
+  - city;
+  - category;
+  - answersCount;
+  - answers;
+  - attachments;
+  - raw platform state.
+- Проверка `NEXT_DATA_ID_MATCH`.
+- Диагностика `NEXT_DATA_STALE`.
+- Lifecycle watcher для client-side navigation.
+- Повторная extraction, пока `__NEXT_DATA__` остаётся stale.
+- Сохранение существующих `SKIP / ANSWER / LEAD`.
+- Formatter `=== PRAVOVED CASE ===`.
+- Панель перенесена из нижнего правого угла в верхний правый.
 
-## Что требуется для v0.1-B
+## Attachments
 
-Предоставить реальные HTML/DOM-фрагменты страницы конкретного вопроса Pravoved:
+Используются два уровня:
 
-1. URL и узел/атрибут с ID вопроса.
-2. Заголовок, текст, дату, город и категорию.
-3. Счётчик и несколько полных ответов юристов с автором и датой.
-4. Примеры вложений с именем, URL и типом.
-5. При возможности — фрагменты для страниц с отсутствующими ответами или вложениями.
+1. whitelist normalization `question.files.items` из `__NEXT_DATA__`;
+2. fallback по видимым attachment links внутри DOM question root.
 
-После получения материалов можно безопасно заполнить `selectors.js`, реализовать
-адресные парсеры и проверить диагностический режим на реальной разметке.
+Результаты объединяются с дедупликацией по URL/имени.
+
+## Live browser acceptance
+
+Проверен вопрос `5043426`.
+
+Подтверждено:
+
+- ID/title/date/city/category;
+- answersCount = 3;
+- три полных ответа;
+- one-based numbering;
+- три PDF-вложения;
+- attachment URLs вида `/upload/<id>/`;
+- copy formatter output;
+- статусы сохраняются после F5/reload;
+- переход на другой вопрос без reload обновляет кейс;
+- stale data предыдущего вопроса не остаётся;
+- верхнее правое положение панели не мешает чату.
+
+Дополнительно ранее использовался контрольный вопрос `5043324` без вложений.
+
+## Следующий этап
+
+`v0.1-B2 — Regression coverage and DOM fallback hardening`
+
+Приоритет:
+
+1. создать обезличенные минимальные fixtures без сырых данных авторизованного кабинета;
+2. добавить regression tests для structured extraction;
+3. закрепить кейсы: без файлов / несколько ответов / несколько файлов / stale ID;
+4. усилить DOM fallback для основных полей;
+5. не менять working contract formatter/status storage без необходимости.
+
+## Scope вне проекта на текущем этапе
+
+Не добавлены:
+
+- Pravoved API;
+- backend;
+- OpenAI API;
+- Telegram;
+- pravovedLM integration;
+- auto-posting;
+- React/npm/build-chain.
