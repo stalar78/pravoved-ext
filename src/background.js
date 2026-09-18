@@ -27,14 +27,25 @@
     return cleaned || fallback;
   }
 
-  function startDownload(attachment, index) {
+  function sanitizePathSegment(value, fallback) {
+    const raw = value === null || value === undefined ? "" : String(value).trim();
+    const cleaned = raw
+      .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, "_")
+      .replace(/[. ]+$/g, "")
+      .slice(0, 80);
+
+    return cleaned || fallback;
+  }
+
+  function startDownload(attachment, index, questionFolder) {
     return new Promise((resolve) => {
       const fallbackName = `pravoved-attachment-${index + 1}`;
       const filename = sanitizeFilename(attachment && attachment.name, fallbackName);
+      const relativePath = `Pravoved/${questionFolder}/${filename}`;
 
       chrome.downloads.download({
         url: attachment.url,
-        filename,
+        filename: relativePath,
         conflictAction: "uniquify",
         saveAs: false
       }, (downloadId) => {
@@ -52,6 +63,7 @@
         resolve({
           ok: true,
           name: filename,
+          path: relativePath,
           downloadId
         });
       });
@@ -80,10 +92,14 @@
       };
     }
 
+    const questionFolder = sanitizePathSegment(
+      message && message.questionId,
+      "unknown-question"
+    );
     const results = [];
 
     for (let index = 0; index < attachments.length; index += 1) {
-      const result = await startDownload(attachments[index], index);
+      const result = await startDownload(attachments[index], index, questionFolder);
       results.push(result);
     }
 
