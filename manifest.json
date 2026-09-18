@@ -19,6 +19,7 @@
         "src/extractor/question.js",
         "src/extractor/answers.js",
         "src/extractor/attachments.js",
+        "src/extractor/next-data.js",
         "src/formatter/chatgpt.js",
         "src/storage/status.js",
         "src/ui/panel.js",
