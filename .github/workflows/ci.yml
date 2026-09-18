@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "feat/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax check
+        shell: bash
+        run: |
+          find src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check tests/zip-smoke.mjs
+
+      - name: ZIP smoke test
+        shell: bash
+        run: |
+          node tests/zip-smoke.mjs
+          unzip -t /tmp/pravoved-zip-smoke.zip

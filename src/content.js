@@ -28,26 +28,16 @@
   }
 
 
-  function requestAttachmentDownloads(caseData) {
+  function requestSingleAttachmentDownload(caseData, attachment) {
     const data = caseData || {};
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-
-    if (attachments.length === 0) {
-      return Promise.resolve({
-        ok: false,
-        requested: 0,
-        started: 0,
-        failed: 0,
-        reason: "NO_ATTACHMENTS"
-      });
-    }
 
     if (!global.chrome || !global.chrome.runtime || !global.chrome.runtime.sendMessage) {
       return Promise.resolve({
         ok: false,
-        requested: attachments.length,
+        mode: "single",
+        requested: 1,
         started: 0,
-        failed: attachments.length,
+        failed: 1,
         reason: "RUNTIME_UNAVAILABLE"
       });
     }
@@ -56,34 +46,89 @@
       global.chrome.runtime.sendMessage({
         type: "PRAVOVED_DOWNLOAD_ATTACHMENTS",
         questionId: data.id || null,
-        attachments: attachments.map((item) => ({
-          name: item && item.name ? String(item.name) : null,
-          url: item && item.url ? String(item.url) : null,
-          type: item && item.type ? String(item.type) : null
-        }))
+        attachments: [{
+          name: attachment && attachment.name ? String(attachment.name) : null,
+          url: attachment && attachment.url ? String(attachment.url) : null,
+          type: attachment && attachment.type ? String(attachment.type) : null
+        }]
       }, (response) => {
         const error = global.chrome.runtime.lastError;
 
         if (error) {
           resolve({
             ok: false,
-            requested: attachments.length,
+            mode: "single",
+            requested: 1,
             started: 0,
-            failed: attachments.length,
+            failed: 1,
             reason: error.message || "DOWNLOAD_MESSAGE_FAILED"
           });
           return;
         }
 
-        resolve(response || {
+        const result = response || {
           ok: false,
-          requested: attachments.length,
+          requested: 1,
           started: 0,
-          failed: attachments.length,
+          failed: 1,
           reason: "EMPTY_DOWNLOAD_RESPONSE"
+        };
+
+        resolve({
+          ...result,
+          mode: "single",
+          filename: result.results && result.results[0] ? result.results[0].name : null
         });
       });
     });
+  }
+
+  async function requestAttachmentDownload(caseData, documentObject) {
+    const data = caseData || {};
+    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+
+    if (attachments.length === 0) {
+      return {
+        ok: false,
+        mode: "none",
+        requested: 0,
+        started: 0,
+        failed: 0,
+        reason: "NO_ATTACHMENTS"
+      };
+    }
+
+    if (attachments.length === 1) {
+      return requestSingleAttachmentDownload(data, attachments[0]);
+    }
+
+    if (!root.downloads || typeof root.downloads.downloadZip !== "function") {
+      return {
+        ok: false,
+        mode: "zip",
+        requested: attachments.length,
+        started: 0,
+        failed: attachments.length,
+        reason: "ZIP_MODULE_UNAVAILABLE"
+      };
+    }
+
+    try {
+      return await root.downloads.downloadZip(
+        attachments,
+        data.id,
+        documentObject
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        mode: "zip",
+        requested: attachments.length,
+        started: 0,
+        failed: attachments.length,
+        reason: error && error.message ? error.message : "ZIP_DOWNLOAD_FAILED"
+      };
+    }
   }
 
   function extractFallbackCase(documentObject, locationObject) {
@@ -186,7 +231,7 @@
       diagnostics: extracted.diagnostics,
       formatter: root.formatter.formatForChatGpt,
       onStatus: (status) => root.storage.setStatus(extracted.caseData.id, status),
-      onDownload: () => requestAttachmentDownloads(extracted.caseData),
+      onDownload: () => requestAttachmentDownload(extracted.caseData, document),
       document
     });
 
@@ -216,7 +261,7 @@
   }
 
   root.extractCase = extractCase;
-  root.requestAttachmentDownloads = requestAttachmentDownloads;
+  root.requestAttachmentDownload = requestAttachmentDownload;
   root.initializeForCurrentQuestion = initializeForCurrentQuestion;
 
   initializeForCurrentQuestion()
