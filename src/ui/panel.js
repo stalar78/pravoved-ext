@@ -132,10 +132,12 @@
         } else if (started > 0) {
           message.textContent = `Загрузка запущена: ${started}/${requested}; ошибок: ${failed}`;
         } else {
-          message.textContent = "Не удалось запустить скачивание";
+          const reason = result && result.reason ? `: ${result.reason}` : "";
+          message.textContent = `Не удалось запустить скачивание${reason}`;
         }
       } catch (error) {
-        message.textContent = "Не удалось запустить скачивание";
+        const reason = error && error.message ? `: ${error.message}` : "";
+        message.textContent = `Не удалось запустить скачивание${reason}`;
         console.warn("Pravoved extension download error", error);
       } finally {
         downloadButton.disabled = false;
