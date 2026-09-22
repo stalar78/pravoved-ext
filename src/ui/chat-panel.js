@@ -52,6 +52,19 @@
           color: #7a8496;
           white-space: nowrap;
         }
+        .reset {
+          border: 0;
+          padding: 0;
+          background: transparent;
+          color: #8a94a6;
+          cursor: pointer;
+          font: 11px/1.2 Arial, sans-serif;
+          text-decoration: underline;
+        }
+        .reset:hover:not(:disabled) {
+          background: transparent;
+          color: #526079;
+        }
         button {
           border: 1px solid #2f6feb;
           border-radius: 5px;
@@ -85,6 +98,7 @@
       </style>
       <span class="wrap">
         <span class="meta" data-role="meta"></span>
+        <button class="reset" type="button" data-role="reset" hidden>сбросить</button>
         <button type="button" data-role="download"></button>
         <span class="message" data-role="message" aria-live="polite"></span>
       </span>
@@ -94,11 +108,32 @@
 
     const meta = shadow.querySelector('[data-role="meta"]');
     const button = shadow.querySelector('[data-role="download"]');
+    const resetButton = shadow.querySelector('[data-role="reset"]');
     const message = shadow.querySelector('[data-role="message"]');
 
     meta.textContent = downloadedCount > 0
       ? `скачано: ${downloadedCount}`
       : "";
+
+    if (downloadedCount > 0 && typeof config.onReset === "function") {
+      resetButton.hidden = false;
+      resetButton.title = "Сбросить локальные отметки скачанных файлов этого чата";
+      resetButton.addEventListener("click", async () => {
+        resetButton.disabled = true;
+        message.textContent = "сбрасываю…";
+
+        try {
+          const result = await config.onReset();
+          message.textContent = result && result.ok
+            ? "история сброшена"
+            : "не удалось сбросить";
+        } catch (_) {
+          message.textContent = "не удалось сбросить";
+        } finally {
+          resetButton.disabled = false;
+        }
+      });
+    }
 
     if (newAttachments.length === 0) {
       button.classList.add("empty");
