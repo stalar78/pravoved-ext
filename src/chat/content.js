@@ -88,6 +88,7 @@
       const result = await sendRuntimeMessage({
         type: "PRAVOVED_DOWNLOAD_ATTACHMENTS",
         folder: `chat-${chatId}`,
+        waitForCompletion: true,
         attachments: [{
           name: attachment.name || null,
           url: attachment.url || null,
