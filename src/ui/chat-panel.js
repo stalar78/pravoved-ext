@@ -127,7 +127,7 @@
         if (result && result.ok) {
           message.textContent = result.mode === "zip"
             ? `готово: ${result.filename || "ZIP"}`
-            : "загрузка запущена";
+            : (result.completed ? "файл скачан" : "загрузка запущена");
 
           if (typeof config.onDownloaded === "function") {
             await config.onDownloaded(newAttachments, result);
