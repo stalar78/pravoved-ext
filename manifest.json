@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pravoved Case Assistant",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Расширение для извлечения кейсов с pravoved.ru и локальной работы с вложениями.",
   "permissions": [
     "storage",
@@ -26,9 +26,13 @@
         "src/extractor/next-data.js",
         "src/formatter/chatgpt.js",
         "src/storage/status.js",
+        "src/storage/chat-files.js",
         "src/download/zip.js",
+        "src/chat/attachments.js",
         "src/ui/panel.js",
-        "src/content.js"
+        "src/ui/chat-panel.js",
+        "src/content.js",
+        "src/chat/content.js"
       ],
       "run_at": "document_idle"
     }
