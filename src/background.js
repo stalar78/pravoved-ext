@@ -38,7 +38,74 @@
     return cleaned || fallback;
   }
 
-  function startDownload(attachment, index, targetFolder) {
+  function waitForDownloadCompletion(downloadId) {
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const cleanup = () => {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        globalThis.clearTimeout(timeoutId);
+      };
+
+      const finish = (result) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const onChanged = (delta) => {
+        if (!delta || delta.id !== downloadId || !delta.state) {
+          return;
+        }
+
+        if (delta.state.current === "complete") {
+          finish({ completed: true });
+          return;
+        }
+
+        if (delta.state.current === "interrupted") {
+          finish({
+            completed: false,
+            error: delta.error && delta.error.current
+              ? delta.error.current
+              : "DOWNLOAD_INTERRUPTED"
+          });
+        }
+      };
+
+      chrome.downloads.onChanged.addListener(onChanged);
+
+      const timeoutId = globalThis.setTimeout(() => {
+        finish({
+          completed: false,
+          error: "DOWNLOAD_COMPLETION_TIMEOUT"
+        });
+      }, 10 * 60 * 1000);
+
+      chrome.downloads.search({ id: downloadId }, (items) => {
+        const error = chrome.runtime.lastError;
+        if (error || !Array.isArray(items) || items.length === 0) {
+          return;
+        }
+
+        const item = items[0];
+        if (item.state === "complete") {
+          finish({ completed: true });
+        } else if (item.state === "interrupted") {
+          finish({
+            completed: false,
+            error: item.error || "DOWNLOAD_INTERRUPTED"
+          });
+        }
+      });
+    });
+  }
+
+  function startDownload(attachment, index, targetFolder, waitForCompletion) {
     return new Promise((resolve) => {
       const fallbackName = `pravoved-attachment-${index + 1}`;
       const filename = sanitizeFilename(attachment && attachment.name, fallbackName);
@@ -61,11 +128,25 @@
           return;
         }
 
-        resolve({
+        const started = {
           ok: true,
           name: filename,
           path: relativePath,
           downloadId
+        };
+
+        if (!waitForCompletion) {
+          resolve(started);
+          return;
+        }
+
+        waitForDownloadCompletion(downloadId).then((completion) => {
+          resolve({
+            ...started,
+            ok: Boolean(completion.completed),
+            completed: Boolean(completion.completed),
+            error: completion.error || null
+          });
         });
       });
     });
@@ -97,10 +178,16 @@
       ? message.folder
       : message && message.questionId;
     const targetFolder = sanitizePathSegment(folderSource, "unknown-question");
+    const waitForCompletion = Boolean(message && message.waitForCompletion);
     const results = [];
 
     for (let index = 0; index < attachments.length; index += 1) {
-      const result = await startDownload(attachments[index], index, targetFolder);
+      const result = await startDownload(
+        attachments[index],
+        index,
+        targetFolder,
+        waitForCompletion
+      );
       results.push(result);
     }
 
@@ -129,19 +216,37 @@
 
       const urlRegex = `https://pravoved\\.ru/upload/${id}/.*`;
 
-      chrome.downloads.search({
+      const search = (query) => {
+        chrome.downloads.search(query, (items) => {
+          const error = chrome.runtime.lastError;
+
+          if (error) {
+            resolve(false);
+            return;
+          }
+
+          if (Array.isArray(items) && items.length > 0) {
+            resolve(true);
+            return;
+          }
+
+          if (query.urlRegex) {
+            search({
+              finalUrlRegex: urlRegex,
+              state: "complete",
+              limit: 1
+            });
+            return;
+          }
+
+          resolve(false);
+        });
+      };
+
+      search({
         urlRegex,
         state: "complete",
         limit: 1
-      }, (items) => {
-        const error = chrome.runtime.lastError;
-
-        if (error) {
-          resolve(false);
-          return;
-        }
-
-        resolve(Array.isArray(items) && items.length > 0);
       });
     });
   }
