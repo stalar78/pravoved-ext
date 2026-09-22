@@ -227,6 +227,18 @@
 
           lastSignature = null;
           await refresh();
+        },
+        onReset: async () => {
+          const result = await root.chatStorage.clearDownloaded(chatId);
+
+          if (result && result.ok) {
+            downloadedIds = new Set();
+            historyCheckedIds = new Set();
+            lastSignature = null;
+            await refresh();
+          }
+
+          return result;
         }
       });
     } finally {
