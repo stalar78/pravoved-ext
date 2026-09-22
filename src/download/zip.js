@@ -277,7 +277,7 @@
     }, 60000);
   }
 
-  async function downloadZip(attachments, questionId, documentObject) {
+  async function downloadZip(attachments, contextId, documentObject, options) {
     const items = Array.isArray(attachments) ? attachments : [];
 
     if (items.length < 2) {
@@ -298,7 +298,12 @@
     }
 
     const blob = createStoredZip(files);
-    const filename = `Pravoved-${sanitizeQuestionId(questionId)}.zip`;
+    const config = options || {};
+    const defaultFilename = `Pravoved-${sanitizeQuestionId(contextId)}.zip`;
+    const requestedFilename = sanitizeFilename(config.filename, defaultFilename);
+    const filename = /\.zip$/i.test(requestedFilename)
+      ? requestedFilename
+      : `${requestedFilename}.zip`;
 
     triggerBlobDownload(blob, filename, documentObject);
 
