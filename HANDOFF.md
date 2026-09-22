@@ -240,3 +240,12 @@ D1 основан на D1-parent branch:
 `feat/v0.1-c2-adaptive-zip-download`.
 
 Сливать D1 только после acceptance/merge C2.
+
+
+### Recovery control
+
+Chat UI includes a small `сбросить` action when local downloaded history is non-empty.
+
+It clears only `pravoved.chat.<chat_id>.downloadedUploads` for the current chat.
+After reset, Chrome download history reconciliation runs again, so previously completed
+direct downloads are re-detected automatically.
