@@ -346,6 +346,8 @@
     const usedNames = new Set();
     const files = [];
 
+    postProgress(message.requestId, 0, input.length, "");
+
     for (let index = 0; index < input.length; index += 1) {
       const attachment = input[index] || {};
       const fetched = await fetchAttachment(attachment.url);
