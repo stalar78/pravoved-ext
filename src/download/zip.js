@@ -218,23 +218,147 @@
     );
   }
 
+  function createRequestId() {
+    if (global.crypto && typeof global.crypto.randomUUID === "function") {
+      return global.crypto.randomUUID();
+    }
+
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function fetchViaPageContext(rawUrl) {
+    return new Promise((resolve, reject) => {
+      if (!global.location || !global.postMessage || !global.addEventListener) {
+        reject(new Error("PAGE_FETCH_BRIDGE_UNAVAILABLE"));
+        return;
+      }
+
+      const requestId = createRequestId();
+      let settled = false;
+
+      const cleanup = () => {
+        global.removeEventListener("message", onMessage);
+        global.clearTimeout(timeoutId);
+      };
+
+      const finish = (callback) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      const onMessage = (event) => {
+        if (
+          event.source !== global
+          || event.origin !== global.location.origin
+          || !event.data
+          || event.data.source !== "pravoved-ext-page"
+          || event.data.type !== "PRAVOVED_EXT_FETCH_ATTACHMENT_RESULT"
+          || event.data.requestId !== requestId
+        ) {
+          return;
+        }
+
+        if (!event.data.ok) {
+          finish(() => {
+            reject(new Error(event.data.error || "ATTACHMENT_FETCH_FAILED"));
+          });
+          return;
+        }
+
+        if (!(event.data.buffer instanceof ArrayBuffer)) {
+          finish(() => {
+            reject(new Error("ATTACHMENT_FETCH_INVALID_BUFFER"));
+          });
+          return;
+        }
+
+        finish(() => {
+          resolve({
+            buffer: event.data.buffer,
+            status: event.data.status || 200,
+            finalUrl: event.data.finalUrl || rawUrl,
+            contentType: event.data.contentType || null
+          });
+        });
+      };
+
+      global.addEventListener("message", onMessage);
+
+      const timeoutId = global.setTimeout(() => {
+        finish(() => {
+          reject(new Error("ATTACHMENT_FETCH_TIMEOUT"));
+        });
+      }, 120000);
+
+      global.postMessage({
+        source: "pravoved-ext-isolated",
+        type: "PRAVOVED_EXT_FETCH_ATTACHMENT",
+        requestId,
+        url: rawUrl
+      }, global.location.origin);
+    });
+  }
+
+  async function fetchDirect(rawUrl) {
+    const response = await fetch(rawUrl, {
+      method: "GET",
+      credentials: "include",
+      redirect: "follow",
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(`ATTACHMENT_HTTP_${response.status}`);
+    }
+
+    return {
+      buffer: await response.arrayBuffer(),
+      status: response.status,
+      finalUrl: response.url || rawUrl,
+      contentType: response.headers.get("content-type") || null
+    };
+  }
+
+  async function fetchAttachmentBytes(rawUrl) {
+    try {
+      return await fetchViaPageContext(rawUrl);
+    } catch (pageError) {
+      if (
+        pageError
+        && typeof pageError.message === "string"
+        && !pageError.message.startsWith("PAGE_FETCH_BRIDGE_")
+        && pageError.message !== "ATTACHMENT_FETCH_TIMEOUT"
+      ) {
+        throw pageError;
+      }
+
+      return fetchDirect(rawUrl);
+    }
+  }
+
   async function fetchAttachment(attachment, index, usedNames) {
     if (!attachment || !isAllowedPravovedUrl(attachment.url)) {
       throw new Error(`INVALID_ATTACHMENT_URL_${index + 1}`);
     }
 
-    const response = await fetch(attachment.url, {
-      method: "GET",
-      credentials: "include",
-      redirect: "follow"
-    });
+    let fetched;
 
-    if (!response.ok) {
-      throw new Error(`ATTACHMENT_HTTP_${response.status}_${index + 1}`);
+    try {
+      fetched = await fetchAttachmentBytes(attachment.url);
+    } catch (error) {
+      const reason = error && error.message
+        ? error.message
+        : "ATTACHMENT_FETCH_FAILED";
+
+      throw new Error(`${reason}_${index + 1}`);
     }
 
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
+    const bytes = new Uint8Array(fetched.buffer);
 
     if (bytes.byteLength > MAX_UINT32) {
       throw new Error("ZIP64_FILE_NOT_SUPPORTED");
