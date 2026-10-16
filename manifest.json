@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pravoved Case Assistant",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Расширение для извлечения кейсов с pravoved.ru и локальной работы с вложениями.",
   "permissions": [
     "storage",
