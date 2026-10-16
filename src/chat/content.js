@@ -72,7 +72,7 @@
       ].join("");
   }
 
-  async function downloadNewBatch(chatId, attachments) {
+  async function downloadNewBatch(chatId, attachments, onProgress) {
     const items = Array.isArray(attachments) ? attachments : [];
 
     if (items.length === 0) {
@@ -119,7 +119,7 @@
         items,
         chatId,
         document,
-        { filename }
+        { filename, onProgress }
       );
     } catch (error) {
       return {
@@ -216,7 +216,7 @@
         chatId,
         newAttachments,
         downloadedCount: downloadedIds.size,
-        onDownload: (batch) => downloadNewBatch(chatId, batch),
+        onDownload: (batch, onProgress) => downloadNewBatch(chatId, batch, onProgress),
         onDownloaded: async (batch) => {
           const ids = batch.map((item) => String(item.id));
           const result = await root.chatStorage.markDownloaded(chatId, ids);
