@@ -157,7 +157,19 @@
         : "собираю ZIP…";
 
       try {
-        const result = await config.onDownload(newAttachments);
+        const result = await config.onDownload(
+          newAttachments,
+          (progress) => {
+            const completed = progress && Number.isFinite(progress.completed)
+              ? progress.completed
+              : 0;
+            const total = progress && Number.isFinite(progress.total)
+              ? progress.total
+              : newAttachments.length;
+
+            message.textContent = `ZIP ${completed}/${total}…`;
+          }
+        );
 
         if (result && result.ok) {
           message.textContent = result.mode === "zip"
