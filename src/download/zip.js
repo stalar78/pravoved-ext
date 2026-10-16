@@ -226,14 +226,18 @@
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
-  function fetchViaPageContext(rawUrl) {
+  function buildZipViaPageContext(attachments, filename, onProgress) {
     return new Promise((resolve, reject) => {
       if (!global.location || !global.postMessage || !global.addEventListener) {
-        reject(new Error("PAGE_FETCH_BRIDGE_UNAVAILABLE"));
+        reject(new Error("PAGE_ZIP_BRIDGE_UNAVAILABLE"));
         return;
       }
 
       const requestId = createRequestId();
+      const timeoutMs = Math.min(
+        10 * 60 * 1000,
+        Math.max(120000, attachments.length * 60000)
+      );
       let settled = false;
 
       const cleanup = () => {
@@ -257,32 +261,42 @@
           || event.origin !== global.location.origin
           || !event.data
           || event.data.source !== "pravoved-ext-page"
-          || event.data.type !== "PRAVOVED_EXT_FETCH_ATTACHMENT_RESULT"
           || event.data.requestId !== requestId
         ) {
           return;
         }
 
-        if (!event.data.ok) {
-          finish(() => {
-            reject(new Error(event.data.error || "ATTACHMENT_FETCH_FAILED"));
-          });
+        if (event.data.type === "PRAVOVED_EXT_BUILD_ZIP_PROGRESS") {
+          if (typeof onProgress === "function") {
+            onProgress({
+              completed: Number(event.data.completed) || 0,
+              total: Number(event.data.total) || attachments.length,
+              name: event.data.name || ""
+            });
+          }
           return;
         }
 
-        if (!(event.data.buffer instanceof ArrayBuffer)) {
+        if (event.data.type !== "PRAVOVED_EXT_BUILD_ZIP_RESULT") {
+          return;
+        }
+
+        if (!event.data.ok) {
           finish(() => {
-            reject(new Error("ATTACHMENT_FETCH_INVALID_BUFFER"));
+            reject(new Error(event.data.error || "ZIP_BUILD_FAILED"));
           });
           return;
         }
 
         finish(() => {
           resolve({
-            buffer: event.data.buffer,
-            status: event.data.status || 200,
-            finalUrl: event.data.finalUrl || rawUrl,
-            contentType: event.data.contentType || null
+            ok: true,
+            mode: "zip",
+            requested: attachments.length,
+            packed: Number(event.data.packed) || attachments.length,
+            started: 1,
+            filename: event.data.filename || filename,
+            size: Number(event.data.size) || 0
           });
         });
       };
@@ -291,91 +305,21 @@
 
       const timeoutId = global.setTimeout(() => {
         finish(() => {
-          reject(new Error("ATTACHMENT_FETCH_TIMEOUT"));
+          reject(new Error("PAGE_ZIP_TIMEOUT"));
         });
-      }, 120000);
+      }, timeoutMs);
 
       global.postMessage({
         source: "pravoved-ext-isolated",
-        type: "PRAVOVED_EXT_FETCH_ATTACHMENT",
+        type: "PRAVOVED_EXT_BUILD_ZIP",
         requestId,
-        url: rawUrl
+        filename,
+        attachments: attachments.map((item) => ({
+          name: item && item.name ? String(item.name) : null,
+          url: item && item.url ? String(item.url) : null
+        }))
       }, global.location.origin);
     });
-  }
-
-  async function fetchDirect(rawUrl) {
-    const response = await fetch(rawUrl, {
-      method: "GET",
-      credentials: "include",
-      redirect: "follow",
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      throw new Error(`ATTACHMENT_HTTP_${response.status}`);
-    }
-
-    return {
-      buffer: await response.arrayBuffer(),
-      status: response.status,
-      finalUrl: response.url || rawUrl,
-      contentType: response.headers.get("content-type") || null
-    };
-  }
-
-  async function fetchAttachmentBytes(rawUrl) {
-    try {
-      return await fetchViaPageContext(rawUrl);
-    } catch (pageError) {
-      if (
-        pageError
-        && typeof pageError.message === "string"
-        && !pageError.message.startsWith("PAGE_FETCH_BRIDGE_")
-        && pageError.message !== "ATTACHMENT_FETCH_TIMEOUT"
-      ) {
-        throw pageError;
-      }
-
-      return fetchDirect(rawUrl);
-    }
-  }
-
-  async function fetchAttachment(attachment, index, usedNames) {
-    if (!attachment || !isAllowedPravovedUrl(attachment.url)) {
-      throw new Error(`INVALID_ATTACHMENT_URL_${index + 1}`);
-    }
-
-    let fetched;
-
-    try {
-      fetched = await fetchAttachmentBytes(attachment.url);
-    } catch (error) {
-      const reason = error && error.message
-        ? error.message
-        : "ATTACHMENT_FETCH_FAILED";
-
-      throw new Error(`${reason}_${index + 1}`);
-    }
-
-    const bytes = new Uint8Array(fetched.buffer);
-
-    if (bytes.byteLength > MAX_UINT32) {
-      throw new Error("ZIP64_FILE_NOT_SUPPORTED");
-    }
-
-    const fallback = `pravoved-attachment-${index + 1}`;
-    const sanitized = sanitizeFilename(attachment.name, fallback);
-    const name = makeUniqueFilename(sanitized, usedNames);
-
-    return {
-      name,
-      nameBytes: encoder.encode(name),
-      bytes,
-      size: bytes.byteLength,
-      crc: crc32(bytes),
-      dos: toDosDateTime(new Date())
-    };
   }
 
   function sanitizeQuestionId(value) {
@@ -413,15 +357,6 @@
       };
     }
 
-    const usedNames = new Set();
-    const files = [];
-
-    for (let index = 0; index < items.length; index += 1) {
-      const file = await fetchAttachment(items[index], index, usedNames);
-      files.push(file);
-    }
-
-    const blob = createStoredZip(files);
     const config = options || {};
     const defaultFilename = `Pravoved-${sanitizeQuestionId(contextId)}.zip`;
     const requestedFilename = sanitizeFilename(config.filename, defaultFilename);
@@ -429,17 +364,11 @@
       ? requestedFilename
       : `${requestedFilename}.zip`;
 
-    triggerBlobDownload(blob, filename, documentObject);
-
-    return {
-      ok: true,
-      mode: "zip",
-      requested: items.length,
-      packed: files.length,
-      started: 1,
+    return buildZipViaPageContext(
+      items,
       filename,
-      size: blob.size
-    };
+      config.onProgress
+    );
   }
 
   downloads.downloadZip = downloadZip;
