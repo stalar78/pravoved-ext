@@ -31,6 +31,46 @@
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
+  function normalizeDateValue(value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (typeof value === "number" || /^\d+$/.test(String(value).trim())) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return null;
+      }
+
+      const milliseconds = numeric > 100000000000
+        ? numeric
+        : numeric * 1000;
+      const date = new Date(milliseconds);
+      return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value.trim() : date.toISOString();
+    }
+
+    return null;
+  }
+
+  function normalizeUserId(user) {
+    if (!user || typeof user !== "object") {
+      return null;
+    }
+
+    const raw = user.id != null
+      ? user.id
+      : user.userId != null
+        ? user.userId
+        : user.user_id;
+
+    return raw == null ? null : String(raw);
+  }
+
   function normalizeAuthor(user) {
     if (!user || typeof user !== "object") {
       return null;
@@ -44,6 +84,199 @@
     }
 
     return name || surname || null;
+  }
+
+  function normalizeRoleToken(value) {
+    return typeof value === "string"
+      ? value.trim().toLowerCase()
+      : "";
+  }
+
+  function isClientTurn(item, user, questionUser) {
+    const questionUserId = normalizeUserId(questionUser);
+    const turnUserId = normalizeUserId(user);
+
+    if (questionUserId && turnUserId) {
+      return questionUserId === turnUserId;
+    }
+
+    const roleTokens = [
+      item && item.role,
+      item && item.userRole,
+      item && item.user_role,
+      user && user.role,
+      user && user.type,
+      user && user.kind
+    ].map(normalizeRoleToken);
+
+    if (roleTokens.some((token) => (
+      token === "client"
+      || token === "customer"
+      || token === "question_author"
+      || token === "question-author"
+      || token === "author"
+    ))) {
+      return true;
+    }
+
+    if (
+      item && (item.isClient === true || item.is_client === true)
+    ) {
+      return true;
+    }
+
+    const questionAuthor = normalizeAuthor(questionUser);
+    const turnAuthor = normalizeAuthor(user);
+
+    return Boolean(
+      questionAuthor
+      && turnAuthor
+      && questionAuthor.toLowerCase() === turnAuthor.toLowerCase()
+    );
+  }
+
+  function extractContainerItems(container) {
+    if (!container) {
+      return [];
+    }
+
+    if (Array.isArray(container)) {
+      return container;
+    }
+
+    if (typeof container !== "object") {
+      return [];
+    }
+
+    const nested = container.items || container.list || container.data;
+
+    if (Array.isArray(nested)) {
+      return nested;
+    }
+
+    if (nested && typeof nested === "object") {
+      return Object.values(nested);
+    }
+
+    return Object.values(container).filter((item) => (
+      item && typeof item === "object"
+    ));
+  }
+
+  function firstTurnText(item) {
+    if (!item || typeof item !== "object") {
+      return null;
+    }
+
+    const sources = [
+      item,
+      item.comment,
+      item.message,
+      item.data
+    ].filter((source) => source && typeof source === "object");
+
+    for (const source of sources) {
+      for (const key of ["text", "content", "body", "message"]) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim()) {
+          return utils.htmlToPlainText(value);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeClientFollowUps(answer, questionUser, diagnostics) {
+    const containers = [
+      ["comments", answer && answer.comments],
+      ["replies", answer && answer.replies],
+      ["messages", answer && answer.messages],
+      ["discussion", answer && answer.discussion],
+      ["clarifications", answer && answer.clarifications],
+      ["followUps", answer && answer.followUps],
+      ["followups", answer && answer.followups]
+    ];
+
+    const result = [];
+    const seen = new Set();
+
+    containers.forEach(([containerName, container]) => {
+      extractContainerItems(container).forEach((item) => {
+        if (!item || typeof item !== "object") {
+          return;
+        }
+
+        const nested = item.comment && typeof item.comment === "object"
+          ? item.comment
+          : item.message && typeof item.message === "object"
+            ? item.message
+            : item;
+
+        const user = nested.user || nested.author || item.user || item.author || null;
+
+        if (!isClientTurn(item, user, questionUser)) {
+          return;
+        }
+
+        const text = firstTurnText(item);
+        if (!text) {
+          return;
+        }
+
+        const id = nested.id != null
+          ? nested.id
+          : item.id != null
+            ? item.id
+            : null;
+        const publishedAt = normalizeDateValue(
+          nested.dateCreate
+          ?? nested.datePublish
+          ?? nested.createdAt
+          ?? nested.created_at
+          ?? nested.date
+          ?? item.dateCreate
+          ?? item.createdAt
+          ?? item.date
+        );
+
+        const key = id != null
+          ? `id:${id}`
+          : `text:${text}|date:${publishedAt || ""}`;
+
+        if (seen.has(key)) {
+          return;
+        }
+
+        seen.add(key);
+        result.push({
+          id,
+          author: normalizeAuthor(user),
+          publishedAt,
+          text,
+          source: containerName
+        });
+      });
+    });
+
+    result.sort((left, right) => {
+      const a = left.publishedAt ? Date.parse(left.publishedAt) : NaN;
+      const b = right.publishedAt ? Date.parse(right.publishedAt) : NaN;
+
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        return a - b;
+      }
+
+      return 0;
+    });
+
+    diagnostics.push(diag(
+      `answer.${answer && answer.id ? answer.id : "unknown"}.clientFollowUps`,
+      result.length > 0 ? "OK" : "NOT_FOUND",
+      result.length > 0 ? `Extracted ${result.length}` : null
+    ));
+
+    return result;
   }
 
   function normalizeQuestionUrl(question, locationObject) {
@@ -231,6 +464,9 @@
     const answersContainer = question && question.answers && typeof question.answers === "object"
       ? question.answers
       : {};
+    const questionUser = question && question.user && typeof question.user === "object"
+      ? question.user
+      : null;
     const items = answersContainer.items && typeof answersContainer.items === "object"
       ? Object.values(answersContainer.items)
       : [];
@@ -250,7 +486,12 @@
         author: normalizeAuthor(answer && answer.user),
         publishedAt: unixSecondsToIso(answer && answer.dateCreate),
         text: utils.htmlToPlainText(answer && answer.text),
-        attachments
+        attachments,
+        clientFollowUps: normalizeClientFollowUps(
+          answer,
+          questionUser,
+          diagnostics
+        )
       };
     });
 

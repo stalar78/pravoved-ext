@@ -182,3 +182,70 @@ ZIP64 пока не поддерживается. Это означает огр
   системный `unzip -t`.
 
 CI настроен на `main` и `feat/**`.
+
+
+## v0.1-D1 — Chat New Attachments
+
+### Реальный DOM chat page
+
+Подтверждены селекторы:
+
+- `.dialog__items-inner` — message stream;
+- `.dialog-message--align-right` — сообщение юриста/текущего пользователя;
+- `a.files__link[href*="/upload/"]` — attachment в message stream;
+- `.dialog-files__link` — duplicate representation во вкладке «Файлы»;
+- `.dialog__input-buttons-right` — свободная точка для UI.
+
+Extractor намеренно читает только message stream и исключает align-right messages.
+
+### Storage
+
+Ключ:
+
+`pravoved.chat.<chat_id>.downloadedUploads`
+
+Payload:
+
+`{ ids: string[], updatedAt: ISO-8601 }`
+
+Не сохраняются тексты сообщений, клиентские имена или содержимое файлов.
+
+### Previous-download detection
+
+Для неизвестных upload IDs service worker вызывает
+`chrome.downloads.search()` и ищет completed download по исходному
+`https://pravoved.ru/upload/<id>/...`.
+
+Это best-effort bootstrap для файлов, которые пользователь скачал в Chrome до появления
+D1. После первого использования главным источником становится локальный storage.
+
+### Runtime
+
+`src/chat/content.js` раз в секунду:
+
+- проверяет текущий chat ID;
+- сканирует attachments;
+- reconciliation с local/download history;
+- обновляет compact UI при изменении списка.
+
+### Download behavior
+
+- 1 new file -> обычный Chrome download в `Pravoved/chat-<id>/`;
+- 2+ new files -> локальный ZIP с timestamp;
+- после успешного запуска batch IDs помечаются downloaded.
+
+### Dependency
+
+D1 основан на D1-parent branch:
+`feat/v0.1-c2-adaptive-zip-download`.
+
+Сливать D1 только после acceptance/merge C2.
+
+
+### Recovery control
+
+Chat UI includes a small `сбросить` action when local downloaded history is non-empty.
+
+It clears only `pravoved.chat.<chat_id>.downloadedUploads` for the current chat.
+After reset, Chrome download history reconciliation runs again, so previously completed
+direct downloads are re-detected automatically.

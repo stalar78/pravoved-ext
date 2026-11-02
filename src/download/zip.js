@@ -218,40 +218,108 @@
     );
   }
 
-  async function fetchAttachment(attachment, index, usedNames) {
-    if (!attachment || !isAllowedPravovedUrl(attachment.url)) {
-      throw new Error(`INVALID_ATTACHMENT_URL_${index + 1}`);
+  function createRequestId() {
+    if (global.crypto && typeof global.crypto.randomUUID === "function") {
+      return global.crypto.randomUUID();
     }
 
-    const response = await fetch(attachment.url, {
-      method: "GET",
-      credentials: "include",
-      redirect: "follow"
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function buildZipViaPageContext(attachments, filename, onProgress) {
+    return new Promise((resolve, reject) => {
+      if (!global.location || !global.postMessage || !global.addEventListener) {
+        reject(new Error("PAGE_ZIP_BRIDGE_UNAVAILABLE"));
+        return;
+      }
+
+      const requestId = createRequestId();
+      const timeoutMs = Math.min(
+        10 * 60 * 1000,
+        Math.max(120000, attachments.length * 60000)
+      );
+      let settled = false;
+
+      const cleanup = () => {
+        global.removeEventListener("message", onMessage);
+        global.clearTimeout(timeoutId);
+      };
+
+      const finish = (callback) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      const onMessage = (event) => {
+        if (
+          event.source !== global
+          || event.origin !== global.location.origin
+          || !event.data
+          || event.data.source !== "pravoved-ext-page"
+          || event.data.requestId !== requestId
+        ) {
+          return;
+        }
+
+        if (event.data.type === "PRAVOVED_EXT_BUILD_ZIP_PROGRESS") {
+          if (typeof onProgress === "function") {
+            onProgress({
+              completed: Number(event.data.completed) || 0,
+              total: Number(event.data.total) || attachments.length,
+              name: event.data.name || ""
+            });
+          }
+          return;
+        }
+
+        if (event.data.type !== "PRAVOVED_EXT_BUILD_ZIP_RESULT") {
+          return;
+        }
+
+        if (!event.data.ok) {
+          finish(() => {
+            reject(new Error(event.data.error || "ZIP_BUILD_FAILED"));
+          });
+          return;
+        }
+
+        finish(() => {
+          resolve({
+            ok: true,
+            mode: "zip",
+            requested: attachments.length,
+            packed: Number(event.data.packed) || attachments.length,
+            started: 1,
+            filename: event.data.filename || filename,
+            size: Number(event.data.size) || 0
+          });
+        });
+      };
+
+      global.addEventListener("message", onMessage);
+
+      const timeoutId = global.setTimeout(() => {
+        finish(() => {
+          reject(new Error("PAGE_ZIP_TIMEOUT"));
+        });
+      }, timeoutMs);
+
+      global.postMessage({
+        source: "pravoved-ext-isolated",
+        type: "PRAVOVED_EXT_BUILD_ZIP",
+        requestId,
+        filename,
+        attachments: attachments.map((item) => ({
+          name: item && item.name ? String(item.name) : null,
+          url: item && item.url ? String(item.url) : null
+        }))
+      }, global.location.origin);
     });
-
-    if (!response.ok) {
-      throw new Error(`ATTACHMENT_HTTP_${response.status}_${index + 1}`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-
-    if (bytes.byteLength > MAX_UINT32) {
-      throw new Error("ZIP64_FILE_NOT_SUPPORTED");
-    }
-
-    const fallback = `pravoved-attachment-${index + 1}`;
-    const sanitized = sanitizeFilename(attachment.name, fallback);
-    const name = makeUniqueFilename(sanitized, usedNames);
-
-    return {
-      name,
-      nameBytes: encoder.encode(name),
-      bytes,
-      size: bytes.byteLength,
-      crc: crc32(bytes),
-      dos: toDosDateTime(new Date())
-    };
   }
 
   function sanitizeQuestionId(value) {
@@ -277,7 +345,7 @@
     }, 60000);
   }
 
-  async function downloadZip(attachments, questionId, documentObject) {
+  async function downloadZip(attachments, contextId, documentObject, options) {
     const items = Array.isArray(attachments) ? attachments : [];
 
     if (items.length < 2) {
@@ -289,28 +357,18 @@
       };
     }
 
-    const usedNames = new Set();
-    const files = [];
+    const config = options || {};
+    const defaultFilename = `Pravoved-${sanitizeQuestionId(contextId)}.zip`;
+    const requestedFilename = sanitizeFilename(config.filename, defaultFilename);
+    const filename = /\.zip$/i.test(requestedFilename)
+      ? requestedFilename
+      : `${requestedFilename}.zip`;
 
-    for (let index = 0; index < items.length; index += 1) {
-      const file = await fetchAttachment(items[index], index, usedNames);
-      files.push(file);
-    }
-
-    const blob = createStoredZip(files);
-    const filename = `Pravoved-${sanitizeQuestionId(questionId)}.zip`;
-
-    triggerBlobDownload(blob, filename, documentObject);
-
-    return {
-      ok: true,
-      mode: "zip",
-      requested: items.length,
-      packed: files.length,
-      started: 1,
+    return buildZipViaPageContext(
+      items,
       filename,
-      size: blob.size
-    };
+      config.onProgress
+    );
   }
 
   downloads.downloadZip = downloadZip;

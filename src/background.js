@@ -1,5 +1,6 @@
 (function initAttachmentDownloader() {
-  const MESSAGE_TYPE = "PRAVOVED_DOWNLOAD_ATTACHMENTS";
+  const DOWNLOAD_MESSAGE_TYPE = "PRAVOVED_DOWNLOAD_ATTACHMENTS";
+  const HISTORY_MESSAGE_TYPE = "PRAVOVED_FIND_COMPLETED_UPLOADS";
 
   function isAllowedPravovedUrl(rawUrl) {
     if (typeof rawUrl !== "string" || !rawUrl.trim()) {
@@ -37,11 +38,78 @@
     return cleaned || fallback;
   }
 
-  function startDownload(attachment, index, questionFolder) {
+  function waitForDownloadCompletion(downloadId) {
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const cleanup = () => {
+        chrome.downloads.onChanged.removeListener(onChanged);
+        globalThis.clearTimeout(timeoutId);
+      };
+
+      const finish = (result) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const onChanged = (delta) => {
+        if (!delta || delta.id !== downloadId || !delta.state) {
+          return;
+        }
+
+        if (delta.state.current === "complete") {
+          finish({ completed: true });
+          return;
+        }
+
+        if (delta.state.current === "interrupted") {
+          finish({
+            completed: false,
+            error: delta.error && delta.error.current
+              ? delta.error.current
+              : "DOWNLOAD_INTERRUPTED"
+          });
+        }
+      };
+
+      chrome.downloads.onChanged.addListener(onChanged);
+
+      const timeoutId = globalThis.setTimeout(() => {
+        finish({
+          completed: false,
+          error: "DOWNLOAD_COMPLETION_TIMEOUT"
+        });
+      }, 10 * 60 * 1000);
+
+      chrome.downloads.search({ id: downloadId }, (items) => {
+        const error = chrome.runtime.lastError;
+        if (error || !Array.isArray(items) || items.length === 0) {
+          return;
+        }
+
+        const item = items[0];
+        if (item.state === "complete") {
+          finish({ completed: true });
+        } else if (item.state === "interrupted") {
+          finish({
+            completed: false,
+            error: item.error || "DOWNLOAD_INTERRUPTED"
+          });
+        }
+      });
+    });
+  }
+
+  function startDownload(attachment, index, targetFolder, waitForCompletion) {
     return new Promise((resolve) => {
       const fallbackName = `pravoved-attachment-${index + 1}`;
       const filename = sanitizeFilename(attachment && attachment.name, fallbackName);
-      const relativePath = `Pravoved/${questionFolder}/${filename}`;
+      const relativePath = `Pravoved/${targetFolder}/${filename}`;
 
       chrome.downloads.download({
         url: attachment.url,
@@ -60,11 +128,25 @@
           return;
         }
 
-        resolve({
+        const started = {
           ok: true,
           name: filename,
           path: relativePath,
           downloadId
+        };
+
+        if (!waitForCompletion) {
+          resolve(started);
+          return;
+        }
+
+        waitForDownloadCompletion(downloadId).then((completion) => {
+          resolve({
+            ...started,
+            ok: Boolean(completion.completed),
+            completed: Boolean(completion.completed),
+            error: completion.error || null
+          });
         });
       });
     });
@@ -92,14 +174,20 @@
       };
     }
 
-    const questionFolder = sanitizePathSegment(
-      message && message.questionId,
-      "unknown-question"
-    );
+    const folderSource = message && message.folder
+      ? message.folder
+      : message && message.questionId;
+    const targetFolder = sanitizePathSegment(folderSource, "unknown-question");
+    const waitForCompletion = Boolean(message && message.waitForCompletion);
     const results = [];
 
     for (let index = 0; index < attachments.length; index += 1) {
-      const result = await startDownload(attachments[index], index, questionFolder);
+      const result = await startDownload(
+        attachments[index],
+        index,
+        targetFolder,
+        waitForCompletion
+      );
       results.push(result);
     }
 
@@ -112,27 +200,115 @@
       accepted: attachments.length,
       started,
       failed,
-      folder: `Pravoved/${questionFolder}`,
+      folder: `Pravoved/${targetFolder}`,
       results
     };
   }
 
+  function searchCompletedUpload(uploadId) {
+    return new Promise((resolve) => {
+      const id = String(uploadId || "").replace(/[^0-9]/g, "");
+
+      if (!id) {
+        resolve(false);
+        return;
+      }
+
+      const urlRegex = `https://pravoved\\.ru/upload/${id}/.*`;
+
+      const search = (query) => {
+        chrome.downloads.search(query, (items) => {
+          const error = chrome.runtime.lastError;
+
+          if (error) {
+            resolve(false);
+            return;
+          }
+
+          if (Array.isArray(items) && items.length > 0) {
+            resolve(true);
+            return;
+          }
+
+          if (query.urlRegex) {
+            search({
+              finalUrlRegex: urlRegex,
+              state: "complete",
+              limit: 1
+            });
+            return;
+          }
+
+          resolve(false);
+        });
+      };
+
+      search({
+        urlRegex,
+        state: "complete",
+        limit: 1
+      });
+    });
+  }
+
+  async function findCompletedUploads(message) {
+    const input = Array.isArray(message && message.uploadIds)
+      ? message.uploadIds
+      : [];
+    const uploadIds = [...new Set(
+      input
+        .map((value) => String(value || "").replace(/[^0-9]/g, ""))
+        .filter(Boolean)
+    )];
+    const completedIds = [];
+
+    for (const uploadId of uploadIds) {
+      if (await searchCompletedUpload(uploadId)) {
+        completedIds.push(uploadId);
+      }
+    }
+
+    return {
+      ok: true,
+      requested: uploadIds.length,
+      completedIds
+    };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message || message.type !== MESSAGE_TYPE) {
+    if (!message || typeof message.type !== "string") {
       return false;
     }
 
-    downloadAttachments(message)
-      .then(sendResponse)
-      .catch((error) => {
-        sendResponse({
-          ok: false,
-          started: 0,
-          failed: Array.isArray(message.attachments) ? message.attachments.length : 0,
-          reason: error && error.message ? error.message : "UNEXPECTED_DOWNLOAD_ERROR"
+    if (message.type === DOWNLOAD_MESSAGE_TYPE) {
+      downloadAttachments(message)
+        .then(sendResponse)
+        .catch((error) => {
+          sendResponse({
+            ok: false,
+            started: 0,
+            failed: Array.isArray(message.attachments) ? message.attachments.length : 0,
+            reason: error && error.message ? error.message : "UNEXPECTED_DOWNLOAD_ERROR"
+          });
         });
-      });
 
-    return true;
+      return true;
+    }
+
+    if (message.type === HISTORY_MESSAGE_TYPE) {
+      findCompletedUploads(message)
+        .then(sendResponse)
+        .catch((error) => {
+          sendResponse({
+            ok: false,
+            completedIds: [],
+            reason: error && error.message ? error.message : "DOWNLOAD_HISTORY_ERROR"
+          });
+        });
+
+      return true;
+    }
+
+    return false;
   });
 })();
