@@ -19,9 +19,25 @@
     return "NOT_FOUND";
   }
 
+  function formatClientFollowUp(item, index) {
+    const followUp = item || {};
+    return [
+      `--- Дополнение клиента ${index + 1} ---`,
+      "Клиент:",
+      utils.displayValue(followUp.author),
+      "Дата/время:",
+      utils.displayValue(followUp.publishedAt),
+      "Текст:",
+      utils.displayValue(followUp.text)
+    ].join("\n");
+  }
+
   function formatAnswer(answer, index) {
     const item = answer || {};
-    return [
+    const followUps = Array.isArray(item.clientFollowUps)
+      ? item.clientFollowUps
+      : [];
+    const lines = [
       `--- Ответ ${index + 1} ---`,
       "Юрист:",
       utils.displayValue(item.author),
@@ -29,7 +45,17 @@
       utils.displayValue(item.publishedAt),
       "Текст:",
       utils.displayValue(item.text)
-    ].join("\n");
+    ];
+
+    if (followUps.length > 0) {
+      lines.push(
+        "",
+        "ДОПОЛНЕНИЯ КЛИЕНТА К ЭТОМУ ОТВЕТУ:",
+        followUps.map(formatClientFollowUp).join("\n\n")
+      );
+    }
+
+    return lines.join("\n");
   }
 
   function formatAttachment(attachment, index) {
