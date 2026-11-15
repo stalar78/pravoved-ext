@@ -249,3 +249,73 @@ Chat UI includes a small `сбросить` action when local downloaded history
 It clears only `pravoved.chat.<chat_id>.downloadedUploads` for the current chat.
 After reset, Chrome download history reconciliation runs again, so previously completed
 direct downloads are re-detected automatically.
+
+
+## v0.1-E1 — Chat Typing Pulse
+
+### Goal
+
+Manual typing-presence pulse for Pravoved private chat while the real reply is prepared
+outside the site editor.
+
+### UI
+
+Mounted into the same free lower-right chat controls area used by D1.
+
+States:
+
+- `Имитировать набор`
+- `● Печатаю M:SS · Стоп`
+
+Default session: 120 seconds.
+
+### Architecture
+
+`src/chat/typing-page.js` runs in MV3 MAIN world only on
+`/private/chat/*`.
+
+It owns the interaction with Pravoved's Draft.js/contenteditable editor.
+The isolated extension world never writes directly into the editor.
+
+`src/chat/typing.js` provides a strict same-origin postMessage command bridge.
+
+`src/ui/chat-typing-control.js` renders the button in Shadow DOM.
+
+`src/chat/typing-content.js` keeps the control alive across chat DOM rerenders and
+route changes.
+
+### Stop conditions
+
+The pulse stops on:
+
+- trusted keydown inside the editor;
+- trusted paste/drop;
+- non-empty editor content;
+- send-button click;
+- chat route change;
+- explicit Stop;
+- 2-minute timeout.
+
+### Native typing protocol
+
+A live DevTools capture on chat `2071123` confirmed that real keyboard input triggers:
+
+`PUT /rest/chatdialog/?method=typing`
+
+with form-urlencoded body containing:
+
+- current Socket.IO `sid` as `socket`;
+- empty `method`;
+- current `data[dialogId]`;
+- `data[chatVersion]=full`.
+
+The old Draft.js mutation experiment did not emit this request and also caused React/Draft
+errors, so it was removed.
+
+The MAIN-world engine now leaves the editor untouched and only reproduces the native typing
+request with the current session cookies and current Socket.IO sid.
+
+### Pulse safety
+
+No DOM text mutation, no key simulation and no auto-posting path remain.
+It never clicks Send and stops immediately on real user input/paste/drop or route change.
