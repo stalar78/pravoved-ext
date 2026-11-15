@@ -5,12 +5,11 @@
   const RESPONSE_TYPE = "PRAVOVED_EXT_TYPING_RESPONSE";
   const EVENT_TYPE = "PRAVOVED_EXT_TYPING_EVENT";
   const CHAT_PATH_RE = /\/private\/chat\/(\d+)(?:\/|$)/;
-  const MARKER = "\u200B";
   const DEFAULT_DURATION_MS = 120000;
   const MAX_DURATION_MS = 5 * 60 * 1000;
-  const MIN_PULSE_DELAY_MS = 2400;
-  const MAX_PULSE_DELAY_MS = 4200;
-  const MARKER_HOLD_MS = 180;
+  const MIN_PULSE_DELAY_MS = 2800;
+  const MAX_PULSE_DELAY_MS = 3800;
+  const TYPING_ENDPOINT = "/rest/chatdialog/?method=typing";
 
   const state = {
     active: false,
@@ -21,7 +20,7 @@
     pulseTimer: null,
     expiryTimer: null,
     monitorTimer: null,
-    mutating: false
+    lastSocketId: null
   };
 
   function currentChatId() {
@@ -65,7 +64,7 @@
     return Boolean(editor && (target === editor || editor.contains(target)));
   }
 
-  function postEvent(kind, reason) {
+  function postEvent(kind, reason, extra) {
     window.postMessage({
       source: RESPONSE_SOURCE,
       type: EVENT_TYPE,
@@ -75,7 +74,8 @@
       chatId: state.chatId,
       startedAt: state.startedAt || null,
       expiresAt: state.expiresAt || null,
-      pulseCount: state.pulseCount
+      pulseCount: state.pulseCount,
+      ...(extra || {})
     }, window.location.origin);
   }
 
@@ -106,17 +106,11 @@
 
     clearAllTimers();
 
-    const editor = findEditor();
-    if (editor) {
-      removeMarker(editor);
-    }
-
     state.active = false;
     state.chatId = null;
     state.startedAt = 0;
     state.expiresAt = 0;
     state.pulseCount = 0;
-    state.mutating = false;
 
     if (wasActive) {
       postEvent("stopped", reason || "STOPPED");
@@ -129,135 +123,104 @@
     };
   }
 
-  function dispatchKeyboard(editor, type) {
-    const event = new KeyboardEvent(type, {
-      key: ".",
-      code: "Period",
-      location: 0,
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    });
+  function isSocketIoResource(url) {
+    if (!url) {
+      return false;
+    }
 
-    editor.dispatchEvent(event);
-  }
-
-  function placeCaretAtEnd(editor) {
     try {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return true;
+      const parsed = new URL(url, window.location.origin);
+      return parsed.pathname.includes("/socket.io/")
+        && parsed.searchParams.has("sid");
     } catch (_) {
       return false;
     }
   }
 
-  function findMarkerTextNode(editor) {
-    const walker = document.createTreeWalker(
-      editor,
-      NodeFilter.SHOW_TEXT
-    );
+  function socketIdFromPerformance() {
+    if (!window.performance || typeof window.performance.getEntriesByType !== "function") {
+      return null;
+    }
 
-    let node;
-    while ((node = walker.nextNode())) {
-      const index = String(node.nodeValue || "").indexOf(MARKER);
-      if (index >= 0) {
-        return { node, index };
+    const resources = window.performance.getEntriesByType("resource");
+
+    for (let index = resources.length - 1; index >= 0; index -= 1) {
+      const entry = resources[index];
+
+      if (!entry || !isSocketIoResource(entry.name)) {
+        continue;
+      }
+
+      try {
+        const parsed = new URL(entry.name);
+        const sid = parsed.searchParams.get("sid");
+
+        if (sid) {
+          return sid;
+        }
+      } catch (_) {
+        // Ignore malformed performance entries.
       }
     }
 
     return null;
   }
 
-  function fallbackTypingSignal(editor) {
-    try {
-      editor.dispatchEvent(new InputEvent("beforeinput", {
-        data: MARKER,
-        inputType: "insertText",
-        bubbles: true,
-        cancelable: true,
-        composed: true
-      }));
+  function resolveSocketId() {
+    const current = socketIdFromPerformance();
 
-      editor.dispatchEvent(new InputEvent("input", {
-        data: MARKER,
-        inputType: "insertText",
-        bubbles: true,
-        composed: true
-      }));
-    } catch (_) {
-      editor.dispatchEvent(new Event("input", {
-        bubbles: true,
-        composed: true
-      }));
+    if (current) {
+      state.lastSocketId = current;
+      return current;
     }
+
+    return state.lastSocketId;
   }
 
-  function insertMarker(editor) {
-    editor.focus({ preventScroll: true });
-    placeCaretAtEnd(editor);
-    dispatchKeyboard(editor, "keydown");
-    dispatchKeyboard(editor, "keypress");
+  function sendTypingRequest(chatId, socketId) {
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      const body = new URLSearchParams();
 
-    state.mutating = true;
+      body.set("socket", socketId || "");
+      body.set("method", "");
+      body.set("data[dialogId]", chatId);
+      body.set("data[chatVersion]", "full");
 
-    try {
-      const inserted = typeof document.execCommand === "function"
-        ? document.execCommand("insertText", false, MARKER)
-        : false;
+      xhr.open("PUT", TYPING_ENDPOINT, true);
+      xhr.withCredentials = true;
+      xhr.timeout = 10000;
+      xhr.setRequestHeader(
+        "Content-Type",
+        "application/x-www-form-urlencoded; charset=UTF-8"
+      );
+      xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
 
-      if (!inserted) {
-        fallbackTypingSignal(editor);
-      }
+      xhr.onload = () => {
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status
+        });
+      };
 
-      return Boolean(inserted);
-    } catch (_) {
-      fallbackTypingSignal(editor);
-      return false;
-    } finally {
-      state.mutating = false;
-    }
-  }
+      xhr.onerror = () => {
+        resolve({
+          ok: false,
+          status: 0,
+          reason: "TYPING_REQUEST_NETWORK_ERROR"
+        });
+      };
 
-  function removeMarker(editor) {
-    const marker = findMarkerTextNode(editor);
+      xhr.ontimeout = () => {
+        resolve({
+          ok: false,
+          status: 0,
+          reason: "TYPING_REQUEST_TIMEOUT"
+        });
+      };
 
-    if (!marker) {
-      dispatchKeyboard(editor, "keyup");
-      return;
-    }
-
-    state.mutating = true;
-
-    try {
-      const selection = window.getSelection();
-      const range = document.createRange();
-
-      range.setStart(marker.node, marker.index);
-      range.setEnd(marker.node, marker.index + MARKER.length);
-      selection.removeAllRanges();
-      selection.addRange(range);
-
-      const deleted = typeof document.execCommand === "function"
-        ? document.execCommand("delete", false)
-        : false;
-
-      if (!deleted && marker.node.nodeValue) {
-        marker.node.nodeValue = marker.node.nodeValue.replace(MARKER, "");
-        fallbackTypingSignal(editor);
-      }
-    } catch (_) {
-      if (marker.node && marker.node.nodeValue) {
-        marker.node.nodeValue = marker.node.nodeValue.replace(MARKER, "");
-      }
-    } finally {
-      state.mutating = false;
-      dispatchKeyboard(editor, "keyup");
-    }
+      xhr.send(body.toString());
+    });
   }
 
   function nextPulseDelay() {
@@ -302,25 +265,35 @@
       return;
     }
 
-    const markerInserted = insertMarker(editor);
+    const socketId = resolveSocketId();
 
-    state.pulseCount += 1;
-    postEvent("pulse", markerInserted ? "MARKER" : "EVENT_ONLY");
+    if (!socketId) {
+      postEvent("pulse-error", "SOCKET_ID_NOT_FOUND");
+      schedulePulse(1500);
+      return;
+    }
 
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, MARKER_HOLD_MS);
-    });
+    const result = await sendTypingRequest(state.chatId, socketId);
 
     if (!state.active) {
       return;
     }
 
-    removeMarker(editor);
-
-    if (meaningfulText(editor)) {
-      stop("EDITOR_HAS_TEXT");
+    if (!result.ok) {
+      postEvent(
+        "pulse-error",
+        result.reason || `TYPING_HTTP_${result.status || 0}`,
+        { status: result.status || 0 }
+      );
+      schedulePulse(nextPulseDelay());
       return;
     }
+
+    state.pulseCount += 1;
+    postEvent("pulse", "NATIVE_TYPING_REQUEST", {
+      status: result.status,
+      socketIdFound: true
+    });
 
     schedulePulse(nextPulseDelay());
   }
@@ -339,6 +312,7 @@
       }
 
       const editor = findEditor();
+
       if (!editor) {
         stop("EDITOR_NOT_FOUND");
         return;
@@ -384,6 +358,16 @@
       };
     }
 
+    const socketId = resolveSocketId();
+
+    if (!socketId) {
+      return {
+        ok: false,
+        active: false,
+        reason: "SOCKET_ID_NOT_FOUND"
+      };
+    }
+
     if (state.active) {
       stop("RESTART");
     }
@@ -398,14 +382,17 @@
     state.startedAt = Date.now();
     state.expiresAt = state.startedAt + normalizedDuration;
     state.pulseCount = 0;
+    state.lastSocketId = socketId;
 
     state.expiryTimer = window.setTimeout(() => {
       stop("TIMEOUT");
     }, normalizedDuration);
 
     scheduleMonitor();
-    schedulePulse(250);
-    postEvent("started", "USER_STARTED");
+    schedulePulse(150);
+    postEvent("started", "USER_STARTED", {
+      socketIdFound: true
+    });
 
     return {
       ok: true,
@@ -413,7 +400,8 @@
       chatId,
       startedAt: state.startedAt,
       expiresAt: state.expiresAt,
-      pulseCount: state.pulseCount
+      pulseCount: state.pulseCount,
+      socketIdFound: true
     };
   }
 
@@ -424,14 +412,14 @@
       chatId: state.chatId,
       startedAt: state.startedAt || null,
       expiresAt: state.expiresAt || null,
-      pulseCount: state.pulseCount
+      pulseCount: state.pulseCount,
+      socketIdFound: Boolean(resolveSocketId())
     };
   }
 
   document.addEventListener("keydown", (event) => {
     if (
       state.active
-      && !state.mutating
       && event.isTrusted
       && isEditorTarget(event.target)
     ) {
@@ -442,7 +430,6 @@
   document.addEventListener("paste", (event) => {
     if (
       state.active
-      && !state.mutating
       && event.isTrusted
       && isEditorTarget(event.target)
     ) {
@@ -453,7 +440,6 @@
   document.addEventListener("drop", (event) => {
     if (
       state.active
-      && !state.mutating
       && event.isTrusted
       && isEditorTarget(event.target)
     ) {
