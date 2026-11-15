@@ -296,11 +296,26 @@ The pulse stops on:
 - explicit Stop;
 - 2-minute timeout.
 
+### Native typing protocol
+
+A live DevTools capture on chat `2071123` confirmed that real keyboard input triggers:
+
+`PUT /rest/chatdialog/?method=typing`
+
+with form-urlencoded body containing:
+
+- current Socket.IO `sid` as `socket`;
+- empty `method`;
+- current `data[dialogId]`;
+- `data[chatVersion]=full`.
+
+The old Draft.js mutation experiment did not emit this request and also caused React/Draft
+errors, so it was removed.
+
+The MAIN-world engine now leaves the editor untouched and only reproduces the native typing
+request with the current session cookies and current Socket.IO sid.
+
 ### Pulse safety
 
-The engine uses a zero-width marker and removes only that marker.
-It never clicks the send button and has no auto-posting path.
-
-The browser acceptance must specifically confirm that Pravoved's remote typing indicator
-is triggered by this Draft.js pulse. If Pravoved requires a different internal event,
-the UX remains unchanged and only the MAIN-world pulse implementation should be adjusted.
+No DOM text mutation, no key simulation and no auto-posting path remain.
+It never clicks Send and stops immediately on real user input/paste/drop or route change.
