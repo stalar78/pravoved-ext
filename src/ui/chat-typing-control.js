@@ -26,7 +26,11 @@
       CHAT_CHANGED: "остановлено: другой чат",
       TIMEOUT: "имитация завершена",
       USER_STOPPED: "остановлено",
-      EDITOR_HAS_TEXT: "остановлено: в поле появился текст"
+      EDITOR_HAS_TEXT: "остановлено: в поле появился текст",
+      SOCKET_ID_NOT_FOUND: "не найдено соединение чата",
+      TYPING_REQUEST_NETWORK_ERROR: "ошибка связи с Pravoved",
+      TYPING_REQUEST_TIMEOUT: "Pravoved не ответил",
+      TYPING_BRIDGE_TIMEOUT: "нет связи с движком"
     };
 
     return labels[reason] || "";
