@@ -106,6 +106,11 @@
 
     clearAllTimers();
 
+    const editor = findEditor();
+    if (editor) {
+      removeMarker(editor);
+    }
+
     state.active = false;
     state.chatId = null;
     state.startedAt = 0;
