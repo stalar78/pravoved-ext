@@ -249,3 +249,58 @@ Chat UI includes a small `сбросить` action when local downloaded history
 It clears only `pravoved.chat.<chat_id>.downloadedUploads` for the current chat.
 After reset, Chrome download history reconciliation runs again, so previously completed
 direct downloads are re-detected automatically.
+
+
+## v0.1-E1 — Chat Typing Pulse
+
+### Goal
+
+Manual typing-presence pulse for Pravoved private chat while the real reply is prepared
+outside the site editor.
+
+### UI
+
+Mounted into the same free lower-right chat controls area used by D1.
+
+States:
+
+- `Имитировать набор`
+- `● Печатаю M:SS · Стоп`
+
+Default session: 120 seconds.
+
+### Architecture
+
+`src/chat/typing-page.js` runs in MV3 MAIN world only on
+`/private/chat/*`.
+
+It owns the interaction with Pravoved's Draft.js/contenteditable editor.
+The isolated extension world never writes directly into the editor.
+
+`src/chat/typing.js` provides a strict same-origin postMessage command bridge.
+
+`src/ui/chat-typing-control.js` renders the button in Shadow DOM.
+
+`src/chat/typing-content.js` keeps the control alive across chat DOM rerenders and
+route changes.
+
+### Stop conditions
+
+The pulse stops on:
+
+- trusted keydown inside the editor;
+- trusted paste/drop;
+- non-empty editor content;
+- send-button click;
+- chat route change;
+- explicit Stop;
+- 2-minute timeout.
+
+### Pulse safety
+
+The engine uses a zero-width marker and removes only that marker.
+It never clicks the send button and has no auto-posting path.
+
+The browser acceptance must specifically confirm that Pravoved's remote typing indicator
+is triggered by this Draft.js pulse. If Pravoved requires a different internal event,
+the UX remains unchanged and only the MAIN-world pulse implementation should be adjusted.
