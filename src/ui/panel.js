@@ -22,7 +22,45 @@
         font: 13px/1.4 Arial, sans-serif;
       }
       .header { padding: 10px 12px 6px; font-weight: 700; }
-      .case-status { padding: 0 12px 10px; color: #526079; word-break: break-word; }
+      .case-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px 4px;
+        color: #526079;
+        word-break: break-word;
+      }
+      .question-type {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .02em;
+        white-space: nowrap;
+      }
+      .question-type.paid {
+        background: #fff1d6;
+        color: #9a5b00;
+        border: 1px solid #f0c36a;
+      }
+      .question-type.standard {
+        background: #eef2f7;
+        color: #526079;
+        border: 1px solid #d6dde8;
+      }
+      .question-type.unknown {
+        background: #f8fafc;
+        color: #8a94a6;
+        border: 1px solid #e5e7eb;
+      }
+      .case-status {
+        padding: 0 12px 10px;
+        color: #8a94a6;
+        font-size: 12px;
+        word-break: break-word;
+      }
       .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 0 12px 10px; }
       button { border: 1px solid #b8c2d4; border-radius: 6px; padding: 7px 5px; background: #f8fafc; color: #172033; cursor: pointer; font: inherit; }
       button:hover:not(:disabled) { background: #eef2ff; }
@@ -52,7 +90,11 @@
       <style>${createStyles()}</style>
       <section class="panel" aria-label="Pravoved Case Assistant">
         <div class="header">Pravoved Case Assistant</div>
-        <div class="case-status" data-role="case-status">Проверка кейса…</div>
+        <div class="case-meta">
+          <span data-role="case-id">ID: ...</span>
+          <span class="question-type unknown" data-role="question-type">НЕ ОПРЕДЕЛЕНО</span>
+        </div>
+        <div class="case-status" data-role="case-status">статус: не установлен</div>
         <div class="actions">
           <button class="primary" data-action="copy">Скопировать для ChatGPT</button>
           <button class="download" data-action="download" hidden>Скачать вложения</button>
@@ -69,6 +111,8 @@
     `;
     documentObject.documentElement.appendChild(host);
 
+    const caseId = shadow.querySelector('[data-role="case-id"]');
+    const questionType = shadow.querySelector('[data-role="question-type"]');
     const caseStatus = shadow.querySelector('[data-role="case-status"]');
     const message = shadow.querySelector('[data-role="message"]');
     const diagnostics = shadow.querySelector('[data-role="diagnostics"]');
@@ -83,7 +127,24 @@
     const attachments = Array.isArray(caseData.attachments) ? caseData.attachments : [];
 
     const idLabel = caseData.id ? `ID: ${caseData.id}` : "ID: NOT_FOUND";
-    caseStatus.textContent = `${idLabel} · статус: ${caseData.status || "не установлен"}`;
+    const isPaid = caseData.platformState
+      ? caseData.platformState.isPaid
+      : null;
+
+    caseId.textContent = idLabel;
+
+    if (isPaid === true) {
+      questionType.textContent = "ПЛАТНЫЙ";
+      questionType.className = "question-type paid";
+    } else if (isPaid === false) {
+      questionType.textContent = "ОБЫЧНЫЙ";
+      questionType.className = "question-type standard";
+    } else {
+      questionType.textContent = "НЕ ОПРЕДЕЛЕНО";
+      questionType.className = "question-type unknown";
+    }
+
+    caseStatus.textContent = `статус: ${caseData.status || "не установлен"}`;
     diagnostics.textContent = JSON.stringify(config.diagnostics || [], null, 2);
 
     if (!caseData.id) {
@@ -161,7 +222,7 @@
         const result = await config.onStatus(button.dataset.action);
         if (result && result.ok) {
           caseData.status = result.value.status;
-          caseStatus.textContent = `${idLabel} · статус: ${caseData.status}`;
+          caseStatus.textContent = `статус: ${caseData.status}`;
           message.textContent = `Статус ${caseData.status} сохранён`;
         } else {
           message.textContent = "Статус не сохранён: ID вопроса не найден";

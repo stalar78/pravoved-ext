@@ -66,6 +66,23 @@
     return `${index + 1}. ${name}${type}${url}`;
   }
 
+  function formatQuestionType(caseData) {
+    const isPaid = caseData
+      && caseData.platformState
+      ? caseData.platformState.isPaid
+      : null;
+
+    if (isPaid === true) {
+      return "ПЛАТНЫЙ";
+    }
+
+    if (isPaid === false) {
+      return "ОБЫЧНЫЙ";
+    }
+
+    return "НЕ ОПРЕДЕЛЕНО";
+  }
+
   function formatForChatGpt(caseData) {
     const data = caseData || {};
     const answers = Array.isArray(data.answers) ? data.answers : [];
@@ -85,6 +102,9 @@
       "",
       "ID:",
       utils.displayValue(data.id),
+      "",
+      "Тип вопроса:",
+      formatQuestionType(data),
       "",
       "Заголовок:",
       utils.displayValue(data.title),
@@ -114,5 +134,6 @@
     ].join("\n");
   }
 
+  formatter.formatQuestionType = formatQuestionType;
   formatter.formatForChatGpt = formatForChatGpt;
 })(globalThis);

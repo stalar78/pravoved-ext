@@ -590,7 +590,9 @@
       platformState: {
         answered: Boolean(question.answered),
         canIChat: question.canIChat == null ? null : Boolean(question.canIChat),
-        isPaid: Boolean(question.labels && question.labels.isPaid),
+        isPaid: question.labels && question.labels.isPaid != null
+          ? Boolean(question.labels.isPaid)
+          : null,
         isClosed: Boolean(question.labels && question.labels.isClosed),
         isCanceled: Boolean(question.labels && question.labels.isCanceled),
         isPrivate: question.labels && question.labels.isPrivate != null
@@ -605,9 +607,15 @@
       ["questionText", caseData.questionText],
       ["publishedAt", caseData.publishedAt],
       ["city", caseData.city],
-      ["category", caseData.category.name]
+      ["category", caseData.category.name],
+      ["platformState.isPaid", caseData.platformState.isPaid]
     ].forEach(([field, value]) => {
-      diagnostics.push(diag(field, value ? "OK" : "NOT_FOUND"));
+      diagnostics.push(diag(
+        field,
+        value !== null && value !== undefined && value !== ""
+          ? "OK"
+          : "NOT_FOUND"
+      ));
     });
 
     return {
