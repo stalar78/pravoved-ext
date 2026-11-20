@@ -187,7 +187,55 @@
     return null;
   }
 
-  function normalizeClientFollowUps(answer, questionUser, diagnostics) {
+  function isSameUser(left, right) {
+    const leftId = normalizeUserId(left);
+    const rightId = normalizeUserId(right);
+
+    if (leftId && rightId) {
+      return leftId === rightId;
+    }
+
+    const leftAuthor = normalizeAuthor(left);
+    const rightAuthor = normalizeAuthor(right);
+
+    return Boolean(
+      leftAuthor
+      && rightAuthor
+      && leftAuthor.toLowerCase() === rightAuthor.toLowerCase()
+    );
+  }
+
+  function classifyFollowUpRole(item, user, questionUser, answerUser) {
+    if (isClientTurn(item, user, questionUser)) {
+      return "CLIENT";
+    }
+
+    if (isSameUser(user, answerUser)) {
+      return "LAWYER";
+    }
+
+    const roleTokens = [
+      item && item.role,
+      item && item.userRole,
+      item && item.user_role,
+      user && user.role,
+      user && user.type,
+      user && user.kind
+    ].map(normalizeRoleToken);
+
+    if (roleTokens.some((token) => (
+      token === "lawyer"
+      || token === "expert"
+      || token === "specialist"
+      || token === "consultant"
+    ))) {
+      return "LAWYER";
+    }
+
+    return "UNKNOWN";
+  }
+
+  function normalizeAnswerFollowUps(answer, questionUser, diagnostics) {
     const containers = [
       ["comments", answer && answer.comments],
       ["replies", answer && answer.replies],
@@ -200,6 +248,9 @@
 
     const result = [];
     const seen = new Set();
+    const answerUser = answer && answer.user && typeof answer.user === "object"
+      ? answer.user
+      : null;
 
     containers.forEach(([containerName, container]) => {
       extractContainerItems(container).forEach((item) => {
@@ -214,12 +265,8 @@
             : item;
 
         const user = nested.user || nested.author || item.user || item.author || null;
-
-        if (!isClientTurn(item, user, questionUser)) {
-          return;
-        }
-
         const text = firstTurnText(item);
+
         if (!text) {
           return;
         }
@@ -239,10 +286,16 @@
           ?? item.createdAt
           ?? item.date
         );
+        const role = classifyFollowUpRole(
+          item,
+          user,
+          questionUser,
+          answerUser
+        );
 
         const key = id != null
           ? `id:${id}`
-          : `text:${text}|date:${publishedAt || ""}`;
+          : `role:${role}|author:${normalizeAuthor(user) || ""}|text:${text}|date:${publishedAt || ""}`;
 
         if (seen.has(key)) {
           return;
@@ -251,6 +304,7 @@
         seen.add(key);
         result.push({
           id,
+          role,
           author: normalizeAuthor(user),
           publishedAt,
           text,
@@ -271,7 +325,7 @@
     });
 
     diagnostics.push(diag(
-      `answer.${answer && answer.id ? answer.id : "unknown"}.clientFollowUps`,
+      `answer.${answer && answer.id ? answer.id : "unknown"}.followUps`,
       result.length > 0 ? "OK" : "NOT_FOUND",
       result.length > 0 ? `Extracted ${result.length}` : null
     ));
@@ -481,17 +535,20 @@
       );
       diagnostics.push(...answerDiagnostics);
 
+      const followUps = normalizeAnswerFollowUps(
+        answer,
+        questionUser,
+        diagnostics
+      );
+
       return {
         id: answer && answer.id != null ? answer.id : null,
         author: normalizeAuthor(answer && answer.user),
         publishedAt: unixSecondsToIso(answer && answer.dateCreate),
         text: utils.htmlToPlainText(answer && answer.text),
         attachments,
-        clientFollowUps: normalizeClientFollowUps(
-          answer,
-          questionUser,
-          diagnostics
-        )
+        followUps,
+        clientFollowUps: followUps.filter((item) => item.role === "CLIENT")
       };
     });
 
