@@ -124,7 +124,11 @@
       shadow.querySelector('[data-action="LEAD"]')
     ].filter(Boolean);
     const caseData = config.caseData || {};
-    const attachments = Array.isArray(caseData.attachments) ? caseData.attachments : [];
+    const attachments = Array.isArray(caseData.clientAttachments)
+      ? caseData.clientAttachments
+      : Array.isArray(caseData.attachments)
+        ? caseData.attachments
+        : [];
 
     const idLabel = caseData.id ? `ID: ${caseData.id}` : "ID: NOT_FOUND";
     const isPaid = caseData.platformState
@@ -157,8 +161,8 @@
     if (attachments.length > 0) {
       downloadButton.hidden = false;
       downloadButton.textContent = attachments.length === 1
-        ? "Скачать файл"
-        : `Скачать ZIP (${attachments.length})`;
+        ? "Скачать файл клиента"
+        : `Скачать файлы клиента ZIP (${attachments.length})`;
     }
 
     copyButton.addEventListener("click", async () => {
