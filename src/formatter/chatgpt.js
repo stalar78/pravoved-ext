@@ -19,11 +19,30 @@
     return "NOT_FOUND";
   }
 
-  function formatClientFollowUp(item, index) {
+  function followUpRoleLabel(role) {
+    if (role === "LAWYER") {
+      return "ЮРИСТ";
+    }
+
+    if (role === "CLIENT") {
+      return "КЛИЕНТ";
+    }
+
+    return "НЕ ОПРЕДЕЛЕНО";
+  }
+
+  function formatFollowUp(item, index) {
     const followUp = item || {};
+    const role = followUpRoleLabel(followUp.role);
+    const authorLabel = followUp.role === "LAWYER"
+      ? "Юрист:"
+      : followUp.role === "CLIENT"
+        ? "Клиент:"
+        : "Автор:";
+
     return [
-      `--- Дополнение клиента ${index + 1} ---`,
-      "Клиент:",
+      `--- Дополнение ${index + 1} · ${role} ---`,
+      authorLabel,
       utils.displayValue(followUp.author),
       "Дата/время:",
       utils.displayValue(followUp.publishedAt),
@@ -34,9 +53,14 @@
 
   function formatAnswer(answer, index) {
     const item = answer || {};
-    const followUps = Array.isArray(item.clientFollowUps)
-      ? item.clientFollowUps
-      : [];
+    const followUps = Array.isArray(item.followUps)
+      ? item.followUps
+      : Array.isArray(item.clientFollowUps)
+        ? item.clientFollowUps.map((followUp) => ({
+          ...followUp,
+          role: followUp.role || "CLIENT"
+        }))
+        : [];
     const lines = [
       `--- Ответ ${index + 1} ---`,
       "Юрист:",
@@ -50,8 +74,8 @@
     if (followUps.length > 0) {
       lines.push(
         "",
-        "ДОПОЛНЕНИЯ КЛИЕНТА К ЭТОМУ ОТВЕТУ:",
-        followUps.map(formatClientFollowUp).join("\n\n")
+        "ДОПОЛНЕНИЯ В ВЕТКЕ ЭТОГО ОТВЕТА:",
+        followUps.map(formatFollowUp).join("\n\n")
       );
     }
 
