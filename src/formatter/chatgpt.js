@@ -40,7 +40,7 @@
         ? "Клиент:"
         : "Автор:";
 
-    return [
+    const lines = [
       `--- Дополнение ${index + 1} · ${role} ---`,
       authorLabel,
       utils.displayValue(followUp.author),
@@ -48,7 +48,20 @@
       utils.displayValue(followUp.publishedAt),
       "Текст:",
       utils.displayValue(followUp.text)
-    ].join("\n");
+    ];
+
+    const attachments = Array.isArray(followUp.attachments)
+      ? followUp.attachments
+      : [];
+
+    if (attachments.length > 0) {
+      lines.push(
+        "Вложения:",
+        attachments.map(formatAttachment).join("\n")
+      );
+    }
+
+    return lines.join("\n");
   }
 
   function formatAnswer(answer, index) {
@@ -110,7 +123,11 @@
   function formatForChatGpt(caseData) {
     const data = caseData || {};
     const answers = Array.isArray(data.answers) ? data.answers : [];
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    const attachments = Array.isArray(data.clientAttachments)
+      ? data.clientAttachments
+      : Array.isArray(data.attachments)
+        ? data.attachments
+        : [];
     const answerBlock = answers.length > 0
       ? answers.map(formatAnswer).join("\n\n")
       : "NOT_FOUND";
