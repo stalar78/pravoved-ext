@@ -83,9 +83,19 @@
     });
   }
 
+  function downloadableClientAttachments(caseData) {
+    const data = caseData || {};
+
+    if (Array.isArray(data.clientAttachments)) {
+      return data.clientAttachments;
+    }
+
+    return Array.isArray(data.attachments) ? data.attachments : [];
+  }
+
   async function requestAttachmentDownload(caseData, documentObject) {
     const data = caseData || {};
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+    const attachments = downloadableClientAttachments(data);
 
     if (attachments.length === 0) {
       return {
@@ -177,6 +187,12 @@
           domAttachments.attachments
         );
 
+        if (!Array.isArray(structured.caseData.clientAttachments)) {
+          structured.caseData.clientAttachments = [
+            ...structured.caseData.attachments
+          ];
+        }
+
         return {
           caseData: structured.caseData,
           diagnostics: [
@@ -261,6 +277,7 @@
   }
 
   root.extractCase = extractCase;
+  root.downloadableClientAttachments = downloadableClientAttachments;
   root.requestAttachmentDownload = requestAttachmentDownload;
   root.initializeForCurrentQuestion = initializeForCurrentQuestion;
 

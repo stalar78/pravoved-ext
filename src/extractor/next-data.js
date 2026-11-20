@@ -235,7 +235,7 @@
     return "UNKNOWN";
   }
 
-  function normalizeAnswerFollowUps(answer, questionUser, diagnostics) {
+  function normalizeAnswerFollowUps(answer, questionUser, diagnostics, locationObject) {
     const containers = [
       ["comments", answer && answer.comments],
       ["replies", answer && answer.replies],
@@ -265,12 +265,6 @@
             : item;
 
         const user = nested.user || nested.author || item.user || item.author || null;
-        const text = firstTurnText(item);
-
-        if (!text) {
-          return;
-        }
-
         const id = nested.id != null
           ? nested.id
           : item.id != null
@@ -292,6 +286,18 @@
           questionUser,
           answerUser
         );
+        const attachments = normalizeTurnAttachments(
+          item,
+          nested,
+          diagnostics,
+          `answer.${answer && answer.id ? answer.id : "unknown"}.followUp.${id != null ? id : "unknown"}.attachments`,
+          locationObject
+        );
+        const text = firstTurnText(item);
+
+        if (!text && attachments.length === 0) {
+          return;
+        }
 
         const key = id != null
           ? `id:${id}`
@@ -308,6 +314,7 @@
           author: normalizeAuthor(user),
           publishedAt,
           text,
+          attachments,
           source: containerName
         });
       });
@@ -415,10 +422,51 @@
       return [];
     }
 
-    const declaredTotal = Number(files.total || 0);
-    const rawItems = files.items;
+    const looksLikeSingleFile = !Array.isArray(files) && Boolean(
+      files.url
+      || files.href
+      || files.downloadUrl
+      || files.download_url
+      || files.filename
+      || files.fileName
+      || files.originalName
+      || files.original_name
+    );
 
-    if (declaredTotal === 0 && (!rawItems || Object.keys(rawItems).length === 0)) {
+    const mappedItems = !Array.isArray(files) && files.items == null && !looksLikeSingleFile
+      ? Object.values(files).filter((value) => (
+        value
+        && typeof value === "object"
+        && (
+          value.url
+          || value.href
+          || value.downloadUrl
+          || value.download_url
+          || value.filename
+          || value.fileName
+          || value.originalName
+          || value.original_name
+          || value.file
+          || value.attachment
+        )
+      ))
+      : [];
+
+    const declaredTotal = Array.isArray(files)
+      ? files.length
+      : Number(files.total || (looksLikeSingleFile ? 1 : mappedItems.length));
+    const rawItems = Array.isArray(files)
+      ? files
+      : files.items != null
+        ? files.items
+        : looksLikeSingleFile
+          ? [files]
+          : mappedItems;
+
+    if (
+      declaredTotal === 0
+      && (!rawItems || (typeof rawItems === "object" && Object.keys(rawItems).length === 0))
+    ) {
       diagnostics.push(diag(field, "OK"));
       return [];
     }
@@ -514,7 +562,67 @@
     return normalized;
   }
 
-  function normalizeAnswers(question, diagnostics) {
+  function mergeUniqueAttachments(...collections) {
+    const result = [];
+    const seen = new Set();
+
+    collections.flat().forEach((item) => {
+      if (!item) {
+        return;
+      }
+
+      const key = item.url || item.name;
+      if (!key || seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      result.push(item);
+    });
+
+    return result;
+  }
+
+  function normalizeTurnAttachments(item, nested, diagnostics, field, locationObject) {
+    const candidates = [
+      nested && nested.files,
+      item && item.files,
+      nested && nested.attachments,
+      item && item.attachments,
+      nested && nested.documents,
+      item && item.documents,
+      nested && nested.file,
+      item && item.file,
+      nested && nested.attachment,
+      item && item.attachment
+    ].filter(Boolean);
+
+    if (candidates.length === 0) {
+      diagnostics.push(diag(field, "OK", "No files container"));
+      return [];
+    }
+
+    const localDiagnostics = [];
+    const normalized = candidates.flatMap((candidate, index) => (
+      normalizeFiles(
+        candidate,
+        localDiagnostics,
+        `${field}.source${index + 1}`,
+        locationObject
+      )
+    ));
+    const unique = mergeUniqueAttachments(normalized);
+
+    diagnostics.push(diag(
+      field,
+      unique.length > 0 ? "OK" : "NOT_FOUND",
+      unique.length > 0 ? `Extracted ${unique.length}` : "No normalized files"
+    ));
+
+    return unique;
+  }
+
+  function normalizeAnswers(question, diagnostics, locationObject) {
     const answersContainer = question && question.answers && typeof question.answers === "object"
       ? question.answers
       : {};
@@ -531,14 +639,15 @@
         answer && answer.files,
         answerDiagnostics,
         `answer.${answer && answer.id ? answer.id : "unknown"}.attachments`,
-        null
+        locationObject
       );
       diagnostics.push(...answerDiagnostics);
 
       const followUps = normalizeAnswerFollowUps(
         answer,
         questionUser,
-        diagnostics
+        diagnostics,
+        locationObject
       );
 
       return {
@@ -622,8 +731,23 @@
       return { matched: false, caseData: null, diagnostics };
     }
 
-    const normalizedAnswers = normalizeAnswers(question, diagnostics);
+    const normalizedAnswers = normalizeAnswers(question, diagnostics, locationObject);
     const attachments = normalizeFiles(question.files, diagnostics, "attachments", locationObject);
+    const clientThreadAttachments = normalizedAnswers.answers.flatMap((answer) => (
+      (Array.isArray(answer.followUps) ? answer.followUps : [])
+        .filter((followUp) => followUp && followUp.role === "CLIENT")
+        .flatMap((followUp) => Array.isArray(followUp.attachments) ? followUp.attachments : [])
+    ));
+    const clientAttachments = mergeUniqueAttachments(
+      attachments,
+      clientThreadAttachments
+    );
+
+    diagnostics.push(diag(
+      "clientAttachments",
+      "OK",
+      `Question: ${attachments.length}; client follow-ups: ${clientThreadAttachments.length}; total unique: ${clientAttachments.length}`
+    ));
     const publishedAt = unixSecondsToIso(question.datePublish)
       || unixSecondsToIso(question.dateCreate);
 
@@ -643,6 +767,7 @@
       answersCount: normalizedAnswers.answersCount,
       answers: normalizedAnswers.answers,
       attachments,
+      clientAttachments,
       status: null,
       platformState: {
         answered: Boolean(question.answered),
