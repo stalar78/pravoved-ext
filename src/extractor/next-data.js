@@ -433,16 +433,35 @@
       || files.original_name
     );
 
+    const mappedItems = !Array.isArray(files) && files.items == null && !looksLikeSingleFile
+      ? Object.values(files).filter((value) => (
+        value
+        && typeof value === "object"
+        && (
+          value.url
+          || value.href
+          || value.downloadUrl
+          || value.download_url
+          || value.filename
+          || value.fileName
+          || value.originalName
+          || value.original_name
+          || value.file
+          || value.attachment
+        )
+      ))
+      : [];
+
     const declaredTotal = Array.isArray(files)
       ? files.length
-      : Number(files.total || (looksLikeSingleFile ? 1 : 0));
+      : Number(files.total || (looksLikeSingleFile ? 1 : mappedItems.length));
     const rawItems = Array.isArray(files)
       ? files
       : files.items != null
         ? files.items
         : looksLikeSingleFile
           ? [files]
-          : null;
+          : mappedItems;
 
     if (
       declaredTotal === 0
@@ -597,7 +616,7 @@
     diagnostics.push(diag(
       field,
       unique.length > 0 ? "OK" : "NOT_FOUND",
-      unique.length > 0 ? `Extracted ${unique.length}` : "No normalized client files"
+      unique.length > 0 ? `Extracted ${unique.length}` : "No normalized files"
     ));
 
     return unique;
