@@ -205,7 +205,24 @@
     };
   }
 
-  function searchCompletedUpload(uploadId) {
+  function isAfterCutoff(item, historyAfter) {
+    if (!historyAfter) {
+      return true;
+    }
+
+    const cutoff = Date.parse(historyAfter);
+    if (!Number.isFinite(cutoff)) {
+      return true;
+    }
+
+    const started = item && item.startTime
+      ? Date.parse(item.startTime)
+      : NaN;
+
+    return Number.isFinite(started) && started >= cutoff;
+  }
+
+  function searchCompletedUpload(uploadId, historyAfter) {
     return new Promise((resolve) => {
       const id = String(uploadId || "").replace(/[^0-9]/g, "");
 
@@ -216,7 +233,7 @@
 
       const urlRegex = `https://pravoved\\.ru/upload/${id}/.*`;
 
-      const search = (query) => {
+      const search = (query, useFinalUrl) => {
         chrome.downloads.search(query, (items) => {
           const error = chrome.runtime.lastError;
 
@@ -225,17 +242,21 @@
             return;
           }
 
-          if (Array.isArray(items) && items.length > 0) {
+          const matched = Array.isArray(items)
+            && items.some((item) => isAfterCutoff(item, historyAfter));
+
+          if (matched) {
             resolve(true);
             return;
           }
 
-          if (query.urlRegex) {
+          if (!useFinalUrl) {
             search({
               finalUrlRegex: urlRegex,
               state: "complete",
-              limit: 1
-            });
+              orderBy: ["-startTime"],
+              limit: 100
+            }, true);
             return;
           }
 
@@ -246,8 +267,9 @@
       search({
         urlRegex,
         state: "complete",
-        limit: 1
-      });
+        orderBy: ["-startTime"],
+        limit: 100
+      }, false);
     });
   }
 
@@ -255,6 +277,9 @@
     const input = Array.isArray(message && message.uploadIds)
       ? message.uploadIds
       : [];
+    const historyAfter = message && typeof message.historyAfter === "string"
+      ? message.historyAfter
+      : null;
     const uploadIds = [...new Set(
       input
         .map((value) => String(value || "").replace(/[^0-9]/g, ""))
@@ -263,7 +288,7 @@
     const completedIds = [];
 
     for (const uploadId of uploadIds) {
-      if (await searchCompletedUpload(uploadId)) {
+      if (await searchCompletedUpload(uploadId, historyAfter)) {
         completedIds.push(uploadId);
       }
     }
@@ -271,7 +296,8 @@
     return {
       ok: true,
       requested: uploadIds.length,
-      completedIds
+      completedIds,
+      historyAfter
     };
   }
 
