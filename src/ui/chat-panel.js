@@ -40,13 +40,13 @@
           all: initial;
           display: inline-flex;
           align-items: center;
-          margin-left: 10px;
+          margin-left: 6px;
           font: 12px/1.3 Arial, sans-serif;
         }
         .wrap {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
         .meta {
           color: #7a8496;
@@ -66,37 +66,42 @@
           color: #526079;
         }
         button {
-          border: 1px solid #2f6feb;
-          border-radius: 5px;
-          padding: 6px 10px;
-          background: #2f6feb;
-          color: #fff;
+          height: 32px;
+          border: 1px solid #c9d2df;
+          border-radius: 8px;
+          padding: 0 12px;
+          background: #fff;
+          color: #4f5f77;
           cursor: pointer;
-          font: 600 12px/1.2 Arial, sans-serif;
+          font: 600 12px/1 Arial, sans-serif;
           white-space: nowrap;
+          box-sizing: border-box;
+          transition: border-color .12s ease, background .12s ease, color .12s ease;
         }
         button:hover:not(:disabled) {
-          background: #245fc8;
+          border-color: #8ea8cf;
+          background: #f6f9ff;
+          color: #2f5f9f;
         }
         button.copy {
-          border-color: #b8c2d4;
-          background: #ffffff;
-          color: #526079;
+          min-width: 116px;
         }
-        button.copy:hover:not(:disabled) {
-          border-color: #2f6feb;
-          background: #eef4ff;
+        button.download {
+          border-color: #8eb2f4;
+          background: #f4f8ff;
           color: #2f6feb;
+        }
+        button.download:hover:not(:disabled) {
+          border-color: #2f6feb;
+          background: #eaf2ff;
+          color: #245fc8;
         }
         button:disabled {
           cursor: wait;
           opacity: .65;
         }
-        button.empty {
-          border-color: #cfd6e4;
-          background: #f6f8fb;
-          color: #7a8496;
-          cursor: default;
+        button[hidden] {
+          display: none !important;
         }
         .message {
           color: #526079;
@@ -109,8 +114,8 @@
       <span class="wrap">
         <span class="meta" data-role="meta"></span>
         <button class="reset" type="button" data-role="reset" hidden>сбросить</button>
-        <button class="copy" type="button" data-role="copy">Скопировать чат</button>
-        <button type="button" data-role="download"></button>
+        <button class="copy" type="button" data-role="copy" title="Скопировать всю переписку">Копировать чат</button>
+        <button class="download" type="button" data-role="download"></button>
         <span class="message" data-role="message" aria-live="polite"></span>
       </span>
     `;
@@ -188,15 +193,17 @@
     });
 
     if (newAttachments.length === 0) {
-      button.classList.add("empty");
-      button.disabled = true;
-      button.textContent = "Новых файлов нет";
+      button.hidden = true;
       return host;
     }
 
+    button.hidden = false;
     button.textContent = newAttachments.length === 1
-      ? "Скачать новый файл"
-      : `Скачать новые ZIP (${newAttachments.length})`;
+      ? "Скачать файл"
+      : `Скачать (${newAttachments.length})`;
+    button.title = newAttachments.length === 1
+      ? "Скачать новый файл клиента"
+      : `Скачать ${newAttachments.length} новых файлов одним ZIP`;
 
     button.addEventListener("click", async () => {
       if (typeof config.onDownload !== "function") {
