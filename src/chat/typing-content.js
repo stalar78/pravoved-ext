@@ -22,9 +22,8 @@
     const chatId = currentChatId();
 
     if (!chatId) {
-      const existing = document.getElementById("pravoved-ext-chat-typing");
-      if (existing) {
-        existing.remove();
+      if (root.typingUi && typeof root.typingUi.remove === "function") {
+        root.typingUi.remove(document);
       }
 
       ui = null;
@@ -119,8 +118,13 @@
 
     global.setInterval(() => {
       const chatId = currentChatId();
+      const toolbarHost = document.getElementById("pravoved-ext-chat-files");
+      const toolbarSlot = toolbarHost && toolbarHost.shadowRoot
+        ? toolbarHost.shadowRoot.querySelector('[data-role="typing-slot"]')
+        : null;
       const hostPresent = Boolean(
-        document.getElementById("pravoved-ext-chat-typing")
+        (toolbarSlot && toolbarSlot.querySelector("#pravoved-ext-chat-typing"))
+        || document.getElementById("pravoved-ext-chat-typing")
       );
 
       if (
