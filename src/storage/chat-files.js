@@ -6,9 +6,17 @@
     return `pravoved.chat.${chatId}.downloadedUploads`;
   }
 
-  function getDownloadedIds(chatId) {
+  function emptyState() {
+    return {
+      ids: [],
+      historyAfter: null,
+      updatedAt: null
+    };
+  }
+
+  function getState(chatId) {
     if (!chatId) {
-      return Promise.resolve([]);
+      return Promise.resolve(emptyState());
     }
 
     const key = storageKey(chatId);
@@ -17,40 +25,63 @@
       chrome.storage.local.get([key], (result) => {
         const error = chrome.runtime.lastError;
         if (error) {
-          resolve([]);
+          resolve(emptyState());
           return;
         }
 
         const value = result && result[key];
-        const ids = value && Array.isArray(value.ids) ? value.ids : [];
-        resolve(ids.map(String));
+        const ids = value && Array.isArray(value.ids)
+          ? value.ids.map(String)
+          : [];
+        const historyAfter = value && typeof value.historyAfter === "string"
+          ? value.historyAfter
+          : null;
+        const updatedAt = value && typeof value.updatedAt === "string"
+          ? value.updatedAt
+          : null;
+
+        resolve({
+          ids,
+          historyAfter,
+          updatedAt
+        });
       });
     });
   }
 
-  function markDownloaded(chatId, ids) {
+  async function getDownloadedIds(chatId) {
+    const state = await getState(chatId);
+    return state.ids;
+  }
+
+  async function getHistoryAfter(chatId) {
+    const state = await getState(chatId);
+    return state.historyAfter;
+  }
+
+  async function markDownloaded(chatId, ids) {
     if (!chatId || !Array.isArray(ids) || ids.length === 0) {
-      return Promise.resolve({ ok: false, ids: [] });
+      return { ok: false, ids: [] };
     }
 
     const key = storageKey(chatId);
+    const state = await getState(chatId);
+    const merged = [...new Set([...state.ids, ...ids.map(String)])];
 
-    return getDownloadedIds(chatId).then((currentIds) => {
-      const merged = [...new Set([...currentIds, ...ids.map(String)])];
-
-      return new Promise((resolve) => {
-        chrome.storage.local.set({
-          [key]: {
-            ids: merged,
-            updatedAt: new Date().toISOString()
-          }
-        }, () => {
-          const error = chrome.runtime.lastError;
-          resolve({
-            ok: !error,
-            ids: merged,
-            error: error ? error.message : null
-          });
+    return new Promise((resolve) => {
+      chrome.storage.local.set({
+        [key]: {
+          ids: merged,
+          historyAfter: state.historyAfter,
+          updatedAt: new Date().toISOString()
+        }
+      }, () => {
+        const error = chrome.runtime.lastError;
+        resolve({
+          ok: !error,
+          ids: merged,
+          historyAfter: state.historyAfter,
+          error: error ? error.message : null
         });
       });
     });
@@ -62,19 +93,30 @@
     }
 
     const key = storageKey(chatId);
+    const historyAfter = new Date().toISOString();
 
     return new Promise((resolve) => {
-      chrome.storage.local.remove([key], () => {
+      chrome.storage.local.set({
+        [key]: {
+          ids: [],
+          historyAfter,
+          updatedAt: historyAfter
+        }
+      }, () => {
         const error = chrome.runtime.lastError;
         resolve({
           ok: !error,
+          ids: [],
+          historyAfter,
           error: error ? error.message : null
         });
       });
     });
   }
 
+  chatStorage.getState = getState;
   chatStorage.getDownloadedIds = getDownloadedIds;
+  chatStorage.getHistoryAfter = getHistoryAfter;
   chatStorage.markDownloaded = markDownloaded;
   chatStorage.clearDownloaded = clearDownloaded;
 })(globalThis);
