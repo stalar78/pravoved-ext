@@ -241,12 +241,22 @@
           );
         },
         onDownload: (batch, onProgress) => downloadNewBatch(chatId, batch, onProgress),
-        onDownloaded: async (batch) => {
-          const ids = batch.map((item) => String(item.id));
-          const result = await root.chatStorage.markDownloaded(chatId, ids);
+        onDownloaded: async (batch, downloadResult) => {
+          const completedSet = downloadResult
+            && Array.isArray(downloadResult.completedIds)
+            && downloadResult.completedIds.length > 0
+            ? new Set(downloadResult.completedIds.map(String))
+            : null;
+          const ids = batch
+            .map((item) => String(item.id))
+            .filter((id) => !completedSet || completedSet.has(id));
 
-          if (result && result.ok) {
-            ids.forEach((id) => downloadedIds.add(id));
+          if (ids.length > 0) {
+            const result = await root.chatStorage.markDownloaded(chatId, ids);
+
+            if (result && result.ok) {
+              ids.forEach((id) => downloadedIds.add(id));
+            }
           }
 
           lastSignature = null;
