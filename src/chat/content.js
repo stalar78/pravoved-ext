@@ -216,6 +216,21 @@
         chatId,
         newAttachments,
         downloadedCount: downloadedIds.size,
+        onCopyChat: (onProgress) => {
+          if (!root.chatTranscript || typeof root.chatTranscript.copyFullChat !== "function") {
+            return Promise.resolve({
+              ok: false,
+              reason: "CHAT_TRANSCRIPT_MODULE_UNAVAILABLE",
+              messageCount: 0
+            });
+          }
+
+          return root.chatTranscript.copyFullChat(
+            document,
+            global.location,
+            onProgress
+          );
+        },
         onDownload: (batch, onProgress) => downloadNewBatch(chatId, batch, onProgress),
         onDownloaded: async (batch) => {
           const ids = batch.map((item) => String(item.id));
