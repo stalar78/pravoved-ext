@@ -98,3 +98,23 @@ CHAT ID:
 - вложения указаны рядом с соответствующими сообщениями;
 - служебная строка `Собеседник сейчас не в сети...` не попадает в transcript;
 - после операции viewport возвращается примерно на прежнее место.
+
+
+## Live bug: initial 50-message window
+
+Observed in browser:
+- chat contains 66 messages;
+- initial Pravoved render exposes only 50;
+- first F4 loader could still copy only those 50 unless the user manually scrolled to the very top first.
+
+Fix in v0.1.13:
+- no longer relies on a single guessed scroll container;
+- drives all plausible chat/page scroll containers to the top;
+- explicitly exposes the first message bubble with `scrollIntoView({block:"start"})`;
+- waits for an actual history change instead of a fixed 450 ms;
+- treats both message-count growth and change of the first visible message as progress;
+- repeats until four consecutive top exposures produce no older history;
+- restores the user's previous bottom-relative viewport after loading.
+
+Acceptance target:
+- on the known 66-message chat, clicking `Скопировать чат` from the initial 50-message state must automatically progress to 66 and copy all 66 without manual scrolling.
