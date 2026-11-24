@@ -8,6 +8,7 @@
   let activeChatId = null;
   let downloadedIds = new Set();
   let historyCheckedIds = new Set();
+  let historyAfter = null;
   let lastSignature = null;
   let refreshInFlight = false;
   let lifecycleStarted = false;
@@ -48,7 +49,8 @@
 
     const result = await sendRuntimeMessage({
       type: "PRAVOVED_FIND_COMPLETED_UPLOADS",
-      uploadIds
+      uploadIds,
+      historyAfter
     });
 
     return result && Array.isArray(result.completedIds)
@@ -132,10 +134,16 @@
   }
 
   async function loadChatState(chatId) {
-    const ids = await root.chatStorage.getDownloadedIds(chatId);
+    const state = root.chatStorage.getState
+      ? await root.chatStorage.getState(chatId)
+      : {
+        ids: await root.chatStorage.getDownloadedIds(chatId),
+        historyAfter: null
+      };
 
     activeChatId = chatId;
-    downloadedIds = new Set(ids.map(String));
+    downloadedIds = new Set((state.ids || []).map(String));
+    historyAfter = state.historyAfter || null;
     historyCheckedIds = new Set();
     lastSignature = null;
   }
@@ -188,6 +196,7 @@
         activeChatId = null;
         downloadedIds = new Set();
         historyCheckedIds = new Set();
+        historyAfter = null;
         lastSignature = null;
         root.chatUi.remove(document);
         return;
@@ -249,6 +258,7 @@
           if (result && result.ok) {
             downloadedIds = new Set();
             historyCheckedIds = new Set();
+            historyAfter = result.historyAfter || new Date().toISOString();
             lastSignature = null;
             await refresh();
           }
