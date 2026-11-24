@@ -278,9 +278,18 @@
         );
 
         if (result && result.ok) {
-          message.textContent = result.mode === "zip"
-            ? `готово: ${result.filename || "ZIP"}`
-            : (result.completed ? "файл скачан" : "загрузка запущена");
+          if (result.mode === "zip") {
+            const packed = Number(result.packed) || 0;
+            const failed = Number(result.failed) || 0;
+
+            message.textContent = failed > 0
+              ? `ZIP: ${packed}/${result.requested || newAttachments.length}; пропущено: ${failed}`
+              : `ZIP готов: ${packed} файлов`;
+          } else {
+            message.textContent = result.completed
+              ? "файл скачан"
+              : "загрузка запущена";
+          }
 
           if (typeof config.onDownloaded === "function") {
             await config.onDownloaded(newAttachments, result);
