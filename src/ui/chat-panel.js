@@ -40,13 +40,27 @@
           all: initial;
           display: inline-flex;
           align-items: center;
-          margin-left: 6px;
+          position: relative;
+          margin-left: 8px;
           font: 12px/1.3 Arial, sans-serif;
         }
         .wrap {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: 8px;
+        }
+        .actions {
+          display: inline-flex;
+          align-items: stretch;
+          gap: 0;
+          border-radius: 8px;
+          box-shadow: 0 0 0 1px rgba(78, 96, 122, .08);
+        }
+        .typing-slot {
+          display: inline-flex;
+          align-items: stretch;
+          margin: 0;
+          padding: 0;
         }
         .meta {
           color: #7a8496;
@@ -66,56 +80,80 @@
           color: #526079;
         }
         button {
-          height: 32px;
-          border: 1px solid #c9d2df;
-          border-radius: 8px;
-          padding: 0 12px;
+          height: 34px;
+          min-width: 94px;
+          border: 1px solid #cbd4e1;
+          border-radius: 0;
+          margin-left: -1px;
+          padding: 0 14px;
           background: #fff;
-          color: #4f5f77;
+          color: #53627a;
           cursor: pointer;
           font: 600 12px/1 Arial, sans-serif;
           white-space: nowrap;
           box-sizing: border-box;
-          transition: border-color .12s ease, background .12s ease, color .12s ease;
-        }
-        button:hover:not(:disabled) {
-          border-color: #8ea8cf;
-          background: #f6f9ff;
-          color: #2f5f9f;
+          transition: background .12s ease, color .12s ease, border-color .12s ease;
         }
         button.copy {
-          min-width: 116px;
+          min-width: 108px;
         }
         button.download {
-          border-color: #8eb2f4;
-          background: #f4f8ff;
-          color: #2f6feb;
+          min-width: 86px;
+          border-radius: 0 8px 8px 0;
         }
-        button.download:hover:not(:disabled) {
-          border-color: #2f6feb;
+        button:hover:not(:disabled) {
+          position: relative;
+          z-index: 1;
+          border-color: #8fa7c9;
+          background: #f5f8fd;
+          color: #2f5f9f;
+        }
+        button.download:not(:disabled) {
+          background: #f3f7ff;
+          color: #2f6feb;
+          border-color: #9ab7e8;
+        }
+        button.download:not(:disabled):hover {
           background: #eaf2ff;
+          border-color: #2f6feb;
           color: #245fc8;
         }
         button:disabled {
-          cursor: wait;
-          opacity: .65;
-        }
-        button[hidden] {
-          display: none !important;
+          cursor: default;
+          background: #f7f8fa;
+          color: #a0a8b5;
+          border-color: #d9dee7;
+          opacity: 1;
         }
         .message {
-          color: #526079;
+          position: absolute;
+          right: 0;
+          bottom: 42px;
+          display: none;
+          max-width: 340px;
+          padding: 5px 8px;
+          border: 1px solid #dce2eb;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, .96);
+          box-shadow: 0 3px 10px rgba(34, 48, 73, .08);
+          color: #68768d;
           white-space: nowrap;
-          max-width: 260px;
           overflow: hidden;
           text-overflow: ellipsis;
+          pointer-events: none;
+        }
+        .message:not(:empty) {
+          display: block;
         }
       </style>
       <span class="wrap">
         <span class="meta" data-role="meta"></span>
         <button class="reset" type="button" data-role="reset" hidden>сбросить</button>
-        <button class="copy" type="button" data-role="copy" title="Скопировать всю переписку">Копировать чат</button>
-        <button class="download" type="button" data-role="download"></button>
+        <span class="actions" data-role="actions">
+          <span class="typing-slot" data-role="typing-slot"></span>
+          <button class="copy" type="button" data-role="copy" title="Скопировать всю переписку">Копировать</button>
+          <button class="download" type="button" data-role="download" title="Новых файлов нет">Файлы</button>
+        </span>
         <span class="message" data-role="message" aria-live="polite"></span>
       </span>
     `;
@@ -193,14 +231,23 @@
     });
 
     if (newAttachments.length === 0) {
-      button.hidden = true;
+      button.disabled = true;
+      button.textContent = "Файлы";
+      button.title = downloadedCount > 0
+        ? `Новых файлов нет · ранее скачано: ${downloadedCount}`
+        : "Новых файлов нет";
+
+      if (root.refreshTypingControl) {
+        global.queueMicrotask(() => {
+          root.refreshTypingControl().catch(() => {});
+        });
+      }
+
       return host;
     }
 
-    button.hidden = false;
-    button.textContent = newAttachments.length === 1
-      ? "Скачать файл"
-      : `Скачать (${newAttachments.length})`;
+    button.disabled = false;
+    button.textContent = `Файлы (${newAttachments.length})`;
     button.title = newAttachments.length === 1
       ? "Скачать новый файл клиента"
       : `Скачать ${newAttachments.length} новых файлов одним ZIP`;
@@ -250,6 +297,12 @@
         button.disabled = false;
       }
     });
+
+    if (root.refreshTypingControl) {
+      global.queueMicrotask(() => {
+        root.refreshTypingControl().catch(() => {});
+      });
+    }
 
     return host;
   }
