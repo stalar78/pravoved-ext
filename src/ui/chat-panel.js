@@ -78,6 +78,16 @@
         button:hover:not(:disabled) {
           background: #245fc8;
         }
+        button.copy {
+          border-color: #b8c2d4;
+          background: #ffffff;
+          color: #526079;
+        }
+        button.copy:hover:not(:disabled) {
+          border-color: #2f6feb;
+          background: #eef4ff;
+          color: #2f6feb;
+        }
         button:disabled {
           cursor: wait;
           opacity: .65;
@@ -99,6 +109,7 @@
       <span class="wrap">
         <span class="meta" data-role="meta"></span>
         <button class="reset" type="button" data-role="reset" hidden>сбросить</button>
+        <button class="copy" type="button" data-role="copy">Скопировать чат</button>
         <button type="button" data-role="download"></button>
         <span class="message" data-role="message" aria-live="polite"></span>
       </span>
@@ -107,6 +118,7 @@
     target.appendChild(host);
 
     const meta = shadow.querySelector('[data-role="meta"]');
+    const copyButton = shadow.querySelector('[data-role="copy"]');
     const button = shadow.querySelector('[data-role="download"]');
     const resetButton = shadow.querySelector('[data-role="reset"]');
     const message = shadow.querySelector('[data-role="message"]');
@@ -134,6 +146,46 @@
         }
       });
     }
+
+    copyButton.addEventListener("click", async () => {
+      if (typeof config.onCopyChat !== "function") {
+        return;
+      }
+
+      copyButton.disabled = true;
+      message.textContent = "собираю чат…";
+
+      try {
+        const result = await config.onCopyChat((progress) => {
+          if (!progress) {
+            return;
+          }
+
+          if (progress.phase === "loading") {
+            const count = Number.isFinite(progress.messageCount)
+              ? progress.messageCount
+              : 0;
+            message.textContent = count > 0
+              ? `догружаю историю: ${count}`
+              : "догружаю историю…";
+          } else if (progress.phase === "formatting") {
+            message.textContent = "готовлю текст…";
+          }
+        });
+
+        if (result && result.ok) {
+          message.textContent = `чат скопирован: ${result.messageCount || 0} сообщений`;
+        } else {
+          const reason = result && result.reason ? `: ${result.reason}` : "";
+          message.textContent = `не удалось скопировать чат${reason}`;
+        }
+      } catch (error) {
+        const reason = error && error.message ? `: ${error.message}` : "";
+        message.textContent = `не удалось скопировать чат${reason}`;
+      } finally {
+        copyButton.disabled = false;
+      }
+    });
 
     if (newAttachments.length === 0) {
       button.classList.add("empty");
