@@ -50,6 +50,16 @@
       return null;
     }
 
+    const legacyHost = documentObject.getElementById(HOST_ID);
+
+    if (
+      toolbarSlot
+      && legacyHost
+      && !toolbarSlot.contains(legacyHost)
+    ) {
+      legacyHost.remove();
+    }
+
     let host = toolbarSlot
       ? toolbarSlot.querySelector(`#${HOST_ID}`)
       : documentObject.getElementById(HOST_ID);
