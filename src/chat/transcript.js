@@ -5,8 +5,10 @@
   const MESSAGE_ROOT_SELECTOR = ".dialog__items-inner";
   const MESSAGE_SELECTOR = ".dialog-message";
   const OWN_MESSAGE_CLASS = "dialog-message--align-right";
-  const MAX_LOAD_ROUNDS = 18;
-  const LOAD_WAIT_MS = 450;
+  const MAX_LOAD_ROUNDS = 30;
+  const LOAD_POLL_MS = 120;
+  const LOAD_ROUND_TIMEOUT_MS = 1800;
+  const STABLE_ROUNDS_REQUIRED = 4;
 
   function normalizeWhitespace(value) {
     return String(value || "")
@@ -44,27 +46,55 @@
       && node.scrollHeight > node.clientHeight + 8;
   }
 
-  function findScrollContainer(messageRoot, documentObject) {
-    const explicit = documentObject.querySelector(".dialog__items");
+  function collectScrollContainers(messageRoot, documentObject) {
+    const result = [];
+    const seen = new Set();
 
-    if (explicit && explicit.scrollHeight > explicit.clientHeight + 8) {
-      return explicit;
+    function add(node) {
+      if (!node || seen.has(node)) {
+        return;
+      }
+
+      seen.add(node);
+      result.push(node);
     }
+
+    const explicitSelectors = [
+      ".dialog__items",
+      ".dialog__items-inner",
+      ".dialog",
+      ".content",
+      "main"
+    ];
+
+    explicitSelectors.forEach((selector) => {
+      const node = documentObject.querySelector(selector);
+
+      if (
+        node
+        && (
+          isScrollable(node)
+          || node === messageRoot
+          || selector === ".dialog__items"
+        )
+      ) {
+        add(node);
+      }
+    });
 
     let current = messageRoot ? messageRoot.parentElement : null;
 
     while (current && current !== documentObject.body) {
       if (isScrollable(current)) {
-        return current;
+        add(current);
       }
 
       current = current.parentElement;
     }
 
-    const scrollingElement = documentObject.scrollingElement
-      || documentObject.documentElement;
+    add(documentObject.scrollingElement || documentObject.documentElement);
 
-    return scrollingElement || null;
+    return result;
   }
 
   function getScrollTop(container, documentObject) {
@@ -81,17 +111,26 @@
   function setScrollTop(container, value, documentObject) {
     const scrollingElement = documentObject.scrollingElement
       || documentObject.documentElement;
+    const top = Math.max(0, Number(value) || 0);
 
     if (!container) {
       return;
     }
 
     if (container === scrollingElement) {
-      global.scrollTo(0, Math.max(0, value));
+      global.scrollTo(0, top);
+      scrollingElement.scrollTop = top;
       return;
     }
 
-    container.scrollTop = Math.max(0, value);
+    if (typeof container.scrollTo === "function") {
+      container.scrollTo({
+        top,
+        behavior: "auto"
+      });
+    }
+
+    container.scrollTop = top;
   }
 
   function dispatchScroll(container, documentObject) {
@@ -102,18 +141,149 @@
       return;
     }
 
+    const event = new Event("scroll", {
+      bubbles: true
+    });
+
     if (container === scrollingElement) {
       global.dispatchEvent(new Event("scroll"));
+      documentObject.dispatchEvent(new Event("scroll", {
+        bubbles: true
+      }));
+      scrollingElement.dispatchEvent(event);
       return;
     }
 
-    container.dispatchEvent(new Event("scroll", {
-      bubbles: true
-    }));
+    container.dispatchEvent(event);
+  }
+
+  function messageSignature(messageRoot) {
+    if (!messageRoot) {
+      return {
+        count: 0,
+        first: null
+      };
+    }
+
+    const messages = [...messageRoot.querySelectorAll(MESSAGE_SELECTOR)];
+    const first = messages[0] || null;
+
+    if (!first) {
+      return {
+        count: 0,
+        first: null
+      };
+    }
+
+    const rawId = first.getAttribute("data-id")
+      || first.getAttribute("data-message-id")
+      || first.id
+      || "";
+    const text = normalizeWhitespace(first.textContent).slice(0, 180);
+
+    return {
+      count: messages.length,
+      first: rawId || text || null
+    };
+  }
+
+  function snapshotScrollState(containers, documentObject) {
+    return containers.map((container) => {
+      const top = getScrollTop(container, documentObject);
+      const height = Number(container.scrollHeight) || 0;
+      const clientHeight = Number(container.clientHeight) || 0;
+
+      return {
+        container,
+        top,
+        bottomDistance: Math.max(0, height - top - clientHeight)
+      };
+    });
+  }
+
+  function restoreScrollState(snapshot, documentObject) {
+    snapshot.forEach((item) => {
+      const container = item.container;
+
+      if (!container || !container.isConnected) {
+        return;
+      }
+
+      const height = Number(container.scrollHeight) || 0;
+      const clientHeight = Number(container.clientHeight) || 0;
+      const restoredTop = height - clientHeight - item.bottomDistance;
+
+      setScrollTop(
+        container,
+        Number.isFinite(restoredTop) ? restoredTop : item.top,
+        documentObject
+      );
+      dispatchScroll(container, documentObject);
+    });
+  }
+
+  function forceTopExposure(messageRoot, documentObject) {
+    const containers = collectScrollContainers(messageRoot, documentObject);
+
+    containers.forEach((container) => {
+      setScrollTop(container, 0, documentObject);
+      dispatchScroll(container, documentObject);
+    });
+
+    const firstMessage = messageRoot.querySelector(MESSAGE_SELECTOR);
+
+    if (firstMessage && typeof firstMessage.scrollIntoView === "function") {
+      try {
+        firstMessage.scrollIntoView({
+          block: "start",
+          inline: "nearest",
+          behavior: "auto"
+        });
+      } catch (_) {
+        firstMessage.scrollIntoView(true);
+      }
+    }
+
+    containers.forEach((container) => {
+      setScrollTop(container, 0, documentObject);
+      dispatchScroll(container, documentObject);
+    });
+
+    return containers;
+  }
+
+  async function waitForHistoryChange(documentObject, previousSignature) {
+    const deadline = Date.now() + LOAD_ROUND_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await wait(LOAD_POLL_MS);
+
+      const currentRoot = findMessageRoot(documentObject);
+      const currentSignature = messageSignature(currentRoot);
+
+      if (
+        currentSignature.count > previousSignature.count
+        || (
+          currentSignature.first
+          && previousSignature.first
+          && currentSignature.first !== previousSignature.first
+        )
+      ) {
+        return {
+          changed: true,
+          signature: currentSignature
+        };
+      }
+    }
+
+    return {
+      changed: false,
+      signature: messageSignature(findMessageRoot(documentObject))
+    };
   }
 
   async function loadAllAvailableMessages(documentObject, onProgress) {
-    const messageRoot = findMessageRoot(documentObject);
+    let messageRoot = findMessageRoot(documentObject);
 
     if (!messageRoot) {
       return {
@@ -123,84 +293,74 @@
       };
     }
 
-    const scrollContainer = findScrollContainer(messageRoot, documentObject);
-    const initialCount = messageRoot.querySelectorAll(MESSAGE_SELECTOR).length;
-
-    if (!scrollContainer) {
-      return {
-        ok: true,
-        loaded: initialCount,
-        rounds: 0
-      };
-    }
-
-    const initialScrollTop = getScrollTop(scrollContainer, documentObject);
-    const initialBottomDistance = Math.max(
-      0,
-      scrollContainer.scrollHeight
-        - initialScrollTop
-        - scrollContainer.clientHeight
+    const initialContainers = collectScrollContainers(
+      messageRoot,
+      documentObject
+    );
+    const scrollSnapshot = snapshotScrollState(
+      initialContainers,
+      documentObject
     );
 
-    let lastCount = initialCount;
+    let signature = messageSignature(messageRoot);
     let stableRounds = 0;
     let rounds = 0;
 
     try {
-      while (rounds < MAX_LOAD_ROUNDS && stableRounds < 3) {
+      while (
+        rounds < MAX_LOAD_ROUNDS
+        && stableRounds < STABLE_ROUNDS_REQUIRED
+      ) {
         rounds += 1;
+        messageRoot = findMessageRoot(documentObject);
 
-        setScrollTop(scrollContainer, 0, documentObject);
-        dispatchScroll(scrollContainer, documentObject);
+        if (!messageRoot) {
+          break;
+        }
+
+        const before = messageSignature(messageRoot);
+        forceTopExposure(messageRoot, documentObject);
 
         if (typeof onProgress === "function") {
           onProgress({
             phase: "loading",
             round: rounds,
-            messageCount: lastCount
+            messageCount: before.count
           });
         }
 
-        await wait(LOAD_WAIT_MS);
+        const result = await waitForHistoryChange(
+          documentObject,
+          before
+        );
 
-        const currentRoot = findMessageRoot(documentObject);
-        if (!currentRoot) {
-          break;
-        }
+        signature = result.signature;
 
-        const currentCount = currentRoot.querySelectorAll(MESSAGE_SELECTOR).length;
-
-        if (currentCount > lastCount) {
-          lastCount = currentCount;
+        if (result.changed) {
           stableRounds = 0;
+
+          if (typeof onProgress === "function") {
+            onProgress({
+              phase: "loading",
+              round: rounds,
+              messageCount: signature.count
+            });
+          }
+
+          await wait(180);
         } else {
           stableRounds += 1;
         }
       }
     } finally {
-      const currentRoot = findMessageRoot(documentObject);
-      const currentContainer = currentRoot
-        ? findScrollContainer(currentRoot, documentObject)
-        : scrollContainer;
-
-      if (currentContainer) {
-        const restoredTop = currentContainer.scrollHeight
-          - currentContainer.clientHeight
-          - initialBottomDistance;
-
-        setScrollTop(
-          currentContainer,
-          Number.isFinite(restoredTop) ? restoredTop : initialScrollTop,
-          documentObject
-        );
-        dispatchScroll(currentContainer, documentObject);
-      }
+      restoreScrollState(scrollSnapshot, documentObject);
     }
 
     return {
       ok: true,
-      loaded: lastCount,
-      rounds
+      loaded: signature.count,
+      rounds,
+      stableRounds
     };
   }
 
