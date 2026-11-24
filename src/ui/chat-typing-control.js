@@ -39,15 +39,22 @@
   function mount(options) {
     const config = options || {};
     const documentObject = config.document || document;
-    const target = documentObject.querySelector(".dialog__input-buttons-right");
+    const toolbarHost = documentObject.getElementById("pravoved-ext-chat-files");
+    const toolbarSlot = toolbarHost && toolbarHost.shadowRoot
+      ? toolbarHost.shadowRoot.querySelector('[data-role="typing-slot"]')
+      : null;
+    const target = toolbarSlot
+      || documentObject.querySelector(".dialog__input-buttons-right");
 
     if (!target) {
       return null;
     }
 
-    let host = documentObject.getElementById(HOST_ID);
+    let host = toolbarSlot
+      ? toolbarSlot.querySelector(`#${HOST_ID}`)
+      : documentObject.getElementById(HOST_ID);
 
-    if (host && host.__pravovedTypingApi) {
+    if (host && host.__pravovedTypingApi && host.isConnected) {
       return host.__pravovedTypingApi;
     }
 
@@ -65,32 +72,34 @@
         :host {
           all: initial;
           display: inline-flex;
-          align-items: center;
-          margin-left: 6px;
+          align-items: stretch;
+          margin: 0;
           font: 12px/1.3 Arial, sans-serif;
         }
         .wrap {
           display: inline-flex;
-          align-items: center;
-          gap: 6px;
+          align-items: stretch;
+          gap: 0;
         }
         button {
-          height: 32px;
-          min-width: 78px;
-          border: 1px solid #c9d2df;
-          border-radius: 8px;
-          padding: 0 12px;
+          height: 34px;
+          min-width: 88px;
+          border: 1px solid #cbd4e1;
+          border-radius: 8px 0 0 8px;
+          padding: 0 14px;
           background: #fff;
-          color: #4f5f77;
+          color: #53627a;
           cursor: pointer;
           font: 600 12px/1 Arial, sans-serif;
           white-space: nowrap;
           box-sizing: border-box;
-          transition: border-color .12s ease, background .12s ease, color .12s ease;
+          transition: background .12s ease, color .12s ease, border-color .12s ease;
         }
         button:hover:not(:disabled) {
-          border-color: #8ea8cf;
-          background: #f6f9ff;
+          position: relative;
+          z-index: 1;
+          border-color: #8fa7c9;
+          background: #f5f8fd;
           color: #2f5f9f;
         }
         button.active {
@@ -103,15 +112,11 @@
           opacity: .65;
         }
         .status {
-          max-width: 180px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          color: #7a8496;
-          white-space: nowrap;
+          display: none;
         }
       </style>
       <span class="wrap">
-        <button type="button" data-role="toggle">Печать</button>
+        <button type="button" data-role="toggle">Набор</button>
         <span class="status" data-role="status" aria-live="polite"></span>
       </span>
     `;
@@ -154,14 +159,14 @@
           : "";
 
         button.textContent = remaining
-          ? `● Печатаю ${remaining}`
-          : "● Печатаю";
+          ? `● Набор ${remaining}`
+          : "● Набор";
 
         button.title = "Нажмите еще раз, чтобы остановить";
       } else {
         button.textContent = state.busy
-          ? "Запускаю…"
-          : "Печать";
+          ? "Запуск…"
+          : "Набор";
         button.title = "Показывать клиенту статус набора около 2 минут";
       }
 
@@ -283,5 +288,21 @@
     return api;
   }
 
+  function remove(documentObject) {
+    const documentRef = documentObject || document;
+    const toolbarHost = documentRef.getElementById("pravoved-ext-chat-files");
+    const toolbarSlot = toolbarHost && toolbarHost.shadowRoot
+      ? toolbarHost.shadowRoot.querySelector('[data-role="typing-slot"]')
+      : null;
+    const host = toolbarSlot
+      ? toolbarSlot.querySelector(`#${HOST_ID}`)
+      : documentRef.getElementById(HOST_ID);
+
+    if (host) {
+      host.remove();
+    }
+  }
+
   typingUi.mount = mount;
+  typingUi.remove = remove;
 })(globalThis);
