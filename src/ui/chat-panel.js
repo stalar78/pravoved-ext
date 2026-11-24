@@ -62,22 +62,48 @@
           margin: 0;
           padding: 0;
         }
+        .history {
+          display: inline-flex;
+          align-items: center;
+          height: 28px;
+          border: 1px solid #dce2eb;
+          border-radius: 999px;
+          padding: 0 4px 0 9px;
+          background: #f8fafc;
+          color: #7b8799;
+          box-sizing: border-box;
+          white-space: nowrap;
+        }
+        .history[hidden] {
+          display: none !important;
+        }
         .meta {
-          color: #7a8496;
+          font: 600 11px/1 Arial, sans-serif;
           white-space: nowrap;
         }
         .reset {
+          width: 22px;
+          height: 22px;
+          min-width: 22px;
+          margin-left: 4px;
           border: 0;
+          border-radius: 50%;
           padding: 0;
           background: transparent;
-          color: #8a94a6;
+          color: #8a96a8;
           cursor: pointer;
-          font: 11px/1.2 Arial, sans-serif;
-          text-decoration: underline;
+          font: 700 14px/1 Arial, sans-serif;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
         .reset:hover:not(:disabled) {
-          background: transparent;
+          background: #edf1f6;
           color: #526079;
+        }
+        .reset:disabled {
+          cursor: wait;
+          opacity: .55;
         }
         button {
           height: 34px;
@@ -147,12 +173,14 @@
         }
       </style>
       <span class="wrap">
-        <span class="meta" data-role="meta"></span>
-        <button class="reset" type="button" data-role="reset" hidden>сбросить</button>
         <span class="actions" data-role="actions">
           <span class="typing-slot" data-role="typing-slot"></span>
           <button class="copy" type="button" data-role="copy" title="Скопировать всю переписку">Копировать</button>
           <button class="download" type="button" data-role="download" title="Новых файлов нет">Файлы</button>
+        </span>
+        <span class="history" data-role="history" hidden>
+          <span class="meta" data-role="meta"></span>
+          <button class="reset" type="button" data-role="reset" title="Сбросить отметки скачанных файлов" aria-label="Сбросить отметки скачанных файлов">↺</button>
         </span>
         <span class="message" data-role="message" aria-live="polite"></span>
       </span>
@@ -160,19 +188,24 @@
 
     target.appendChild(host);
 
+    const history = shadow.querySelector('[data-role="history"]');
     const meta = shadow.querySelector('[data-role="meta"]');
     const copyButton = shadow.querySelector('[data-role="copy"]');
     const button = shadow.querySelector('[data-role="download"]');
     const resetButton = shadow.querySelector('[data-role="reset"]');
     const message = shadow.querySelector('[data-role="message"]');
 
-    meta.textContent = downloadedCount > 0
-      ? `скачано: ${downloadedCount}`
-      : "";
+    if (downloadedCount > 0) {
+      history.hidden = false;
+      meta.textContent = `✓ ${downloadedCount}`;
+      history.title = `Отмечено скачанными: ${downloadedCount}`;
+    } else {
+      history.hidden = true;
+      meta.textContent = "";
+    }
 
     if (downloadedCount > 0 && typeof config.onReset === "function") {
-      resetButton.hidden = false;
-      resetButton.title = "Сбросить локальные отметки скачанных файлов этого чата";
+      resetButton.title = "Сбросить отметки скачанных файлов этого чата";
       resetButton.addEventListener("click", async () => {
         resetButton.disabled = true;
         message.textContent = "сбрасываю…";
