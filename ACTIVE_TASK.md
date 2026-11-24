@@ -118,3 +118,29 @@ Fix in v0.1.13:
 
 Acceptance target:
 - on the known 66-message chat, clicking `Скопировать чат` from the initial 50-message state must automatically progress to 66 and copy all 66 without manual scrolling.
+
+
+## Live file-control bugs fixed in v0.1.16
+
+Observed:
+- `сбросить` cleared chrome.storage but the next refresh reconciled the same historical
+  Chrome downloads and immediately restored the old downloaded count;
+- a single stale/private attachment returning `ATTACHMENT_HTTP_404` aborted the entire ZIP.
+
+Reset fix:
+- chat download state now stores `historyAfter`;
+- reset sets `historyAfter` to the reset timestamp and clears ids;
+- browser download-history reconciliation ignores downloads older than that cutoff;
+- the cutoff persists across page reloads.
+
+ZIP fix:
+- page-context fetch tries the original URL, `?source=dialog`, and canonical upload URL;
+- each file is fetched independently;
+- one 404 no longer aborts the complete ZIP;
+- available files are packed and downloaded;
+- failed attachment IDs remain unmarked, so they stay visible for retry;
+- UI reports partial success, e.g. `ZIP: 18/19; пропущено: 1`.
+
+Acceptance:
+- clicking `сбросить` must reduce downloaded count to zero and expose the current files again;
+- downloading a batch with one 404 must still download a ZIP containing all accessible files.
