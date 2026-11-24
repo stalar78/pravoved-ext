@@ -293,7 +293,14 @@
             ok: true,
             mode: "zip",
             requested: attachments.length,
-            packed: Number(event.data.packed) || attachments.length,
+            packed: Number(event.data.packed) || 0,
+            failed: Number(event.data.failed) || 0,
+            failures: Array.isArray(event.data.failures)
+              ? event.data.failures
+              : [],
+            completedIds: Array.isArray(event.data.completedIds)
+              ? event.data.completedIds.map(String)
+              : [],
             started: 1,
             filename: event.data.filename || filename,
             size: Number(event.data.size) || 0
@@ -315,6 +322,7 @@
         requestId,
         filename,
         attachments: attachments.map((item) => ({
+          id: item && item.id != null ? String(item.id) : null,
           name: item && item.name ? String(item.name) : null,
           url: item && item.url ? String(item.url) : null
         }))

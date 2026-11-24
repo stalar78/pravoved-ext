@@ -105,6 +105,17 @@
     return new URL(`/upload/${match[1]}/`, url.origin);
   }
 
+  function dialogUploadUrl(url) {
+    const canonical = canonicalUploadUrl(url);
+
+    if (!canonical) {
+      return null;
+    }
+
+    canonical.searchParams.set("source", "dialog");
+    return canonical;
+  }
+
   async function fetchCandidate(url) {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
@@ -154,12 +165,21 @@
       throw new Error("INVALID_ATTACHMENT_URL");
     }
 
-    const candidates = [requested];
-    const canonical = canonicalUploadUrl(requested);
+    const candidates = [];
+    const seen = new Set();
 
-    if (canonical && canonical.href !== requested.href) {
-      candidates.push(canonical);
-    }
+    [
+      requested,
+      dialogUploadUrl(requested),
+      canonicalUploadUrl(requested)
+    ].forEach((candidate) => {
+      if (!candidate || seen.has(candidate.href)) {
+        return;
+      }
+
+      seen.add(candidate.href);
+      candidates.push(candidate);
+    });
 
     let lastStatus = 0;
 
@@ -345,39 +365,65 @@
 
     const usedNames = new Set();
     const files = [];
+    const completedIds = [];
+    const failures = [];
 
     postProgress(message.requestId, 0, input.length, "");
 
     for (let index = 0; index < input.length; index += 1) {
       const attachment = input[index] || {};
-      const fetched = await fetchAttachment(attachment.url);
-      const bytes = new Uint8Array(fetched.buffer);
-
-      if (bytes.byteLength > MAX_UINT32) {
-        throw new Error(`ZIP64_FILE_NOT_SUPPORTED_${index + 1}`);
-      }
-
       const fallback = `pravoved-attachment-${index + 1}`;
-      const name = makeUniqueFilename(
-        sanitizeFilename(attachment.name, fallback),
-        usedNames
-      );
+      const displayName = sanitizeFilename(attachment.name, fallback);
 
-      files.push({
-        name,
-        nameBytes: encoder.encode(name),
-        bytes,
-        size: bytes.byteLength,
-        crc: crc32(bytes),
-        dos: toDosDateTime(new Date())
-      });
+      try {
+        const fetched = await fetchAttachment(attachment.url);
+        const bytes = new Uint8Array(fetched.buffer);
+
+        if (bytes.byteLength > MAX_UINT32) {
+          throw new Error("ZIP64_FILE_NOT_SUPPORTED");
+        }
+
+        const name = makeUniqueFilename(
+          displayName,
+          usedNames
+        );
+
+        files.push({
+          name,
+          nameBytes: encoder.encode(name),
+          bytes,
+          size: bytes.byteLength,
+          crc: crc32(bytes),
+          dos: toDosDateTime(new Date())
+        });
+
+        if (attachment.id != null) {
+          completedIds.push(String(attachment.id));
+        }
+      } catch (error) {
+        failures.push({
+          index,
+          id: attachment.id != null ? String(attachment.id) : null,
+          name: displayName,
+          error: error && error.message
+            ? error.message
+            : "ATTACHMENT_FETCH_FAILED"
+        });
+      }
 
       postProgress(
         message.requestId,
         index + 1,
         input.length,
-        name
+        displayName
       );
+    }
+
+    if (files.length === 0) {
+      const firstError = failures[0] && failures[0].error
+        ? failures[0].error
+        : "NO_DOWNLOADABLE_ATTACHMENTS";
+      throw new Error(firstError);
     }
 
     const blob = createStoredZip(files);
@@ -386,7 +432,10 @@
     return {
       filename: zipFilename,
       size: blob.size,
-      packed: files.length
+      packed: files.length,
+      failed: failures.length,
+      failures,
+      completedIds
     };
   }
 
@@ -414,7 +463,10 @@
         ok: true,
         filename: result.filename,
         size: result.size,
-        packed: result.packed
+        packed: result.packed,
+        failed: result.failed,
+        failures: result.failures,
+        completedIds: result.completedIds
       }, window.location.origin);
     } catch (error) {
       window.postMessage({

@@ -1,88 +1,146 @@
 # ACTIVE TASK
 
-**v0.1-F3 — Client Thread Attachments**
+**v0.1-F4 — One-click Full Chat Copy**
 
-Цель этапа — на странице вопроса скачивать не только вложения исходного вопроса,
-но и файлы, которые исходный клиент добавляет позднее внутри веток ответов юристов.
+Цель этапа — копировать всю доступную переписку Pravoved private chat одной кнопкой,
+без ручного выделения текста и прокрутки истории.
 
-Файлы, загруженные юристами, в download set не включаются.
+Работает только на:
 
-## Data model
+`https://pravoved.ru/private/chat/<chat_id>/`
 
-Structured extractor сохраняет вложения каждой follow-up реплики:
+## UX
 
-`followUps[].attachments`
+В нижней панели чата рядом с файловым контролом:
 
-После классификации роли формируется отдельный агрегат:
+`Скопировать чат`
 
-`caseData.clientAttachments`
+Во время работы:
 
-В него входят:
+- `догружаю историю: N`;
+- `готовлю текст…`;
+- после успеха: `чат скопирован: N сообщений`.
 
-1. вложения исходного вопроса;
-2. вложения follow-up реплик только с `role === "CLIENT"`.
+Кнопка доступна независимо от наличия новых файлов.
 
-Не входят:
+## Loading older messages
 
-- attachments основного ответа юриста;
-- attachments follow-up реплик с `role === "LAWYER"`;
-- unknown-role attachments.
+Перед копированием extension пытается автоматически догрузить ранние сообщения:
 
-## File shapes
+1. находит scroll-container ленты `.dialog__items-inner`;
+2. программно поднимается к началу;
+3. ждёт появления дополнительных `.dialog-message`;
+4. повторяет до стабилизации количества либо до bounded limit;
+5. восстанавливает прежнюю позицию относительно низа чата.
 
-Поддерживаются:
+Пользователю не нужно вручную прокручивать историю.
 
-- `files.items`;
-- массив файлов;
-- одиночный file object;
-- object-map файлов под ID-ключами;
-- поля `files`, `attachments`, `documents`, `file`, `attachment`.
+## What is copied
 
-Follow-up сохраняется даже без текста, если в нем есть файл.
+Только сообщения диалога из `.dialog__items-inner .dialog-message`.
 
-## Download UX
+Role:
 
-Панель использует только `clientAttachments`.
+- `.dialog-message--align-right` -> `ЮРИСТ`;
+- остальные message bubbles -> `КЛИЕНТ`.
 
-1 клиентский файл:
+Для каждого сообщения сохраняются:
 
-`Скачать файл клиента`
+- порядковый номер;
+- роль;
+- время, если доступно;
+- текст;
+- вложения и их Pravoved upload URL.
 
-2+ клиентских файлов:
+Служебные notice/status blocks вне `.dialog-message` не копируются.
 
-`Скачать файлы клиента ZIP (N)`
+## Output
 
-ZIP содержит единый deduplicated набор клиентских файлов со всей карточки.
+```
+=== PRAVOVED CHAT ===
 
-## Copy output
+URL:
+...
 
-Блок `ВЛОЖЕНИЯ` также использует `clientAttachments`.
+CHAT ID:
+...
 
-Если файл находится внутри follow-up, он дополнительно показывается рядом с этой репликой
-в `ДОПОЛНЕНИЯ В ВЕТКЕ ЭТОГО ОТВЕТА`.
+Количество сообщений:
+...
 
-## Privacy / boundary
+ПЕРЕПИСКА:
+--- Сообщение 1 · КЛИЕНТ ---
+...
 
-Расширение не пытается определять принадлежность файла по имени или содержимому.
+--- Сообщение 2 · ЮРИСТ ---
+...
 
-Роль берется из уже нормализованной принадлежности реплики:
+=== END CHAT ===
+```
 
-- исходный author question -> CLIENT;
-- author основного answer / lawyer role -> LAWYER.
+## Safety
 
-Это важно, чтобы случайно не скачать документы, загруженные другим юристом.
+- ничего не отправляется в чат;
+- содержание сообщений не сохраняется в chrome.storage;
+- копирование происходит только по явному нажатию;
+- DOM сообщения не изменяется;
+- после копирования текст находится только в clipboard пользователя.
 
 ## Acceptance target
 
-На вопросе, где:
+На длинном реальном чате:
 
-- под исходным вопросом есть 3 клиентских файла;
-- позже клиент добавил еще 1 файл в дополнении к ответу;
+- кнопка видна рядом с download-control;
+- ручная прокрутка/выделение не нужны;
+- ранние и последние сообщения присутствуют в copied transcript;
+- входящие сообщения имеют role `КЛИЕНТ`;
+- наши сообщения имеют role `ЮРИСТ`;
+- вложения указаны рядом с соответствующими сообщениями;
+- служебная строка `Собеседник сейчас не в сети...` не попадает в transcript;
+- после операции viewport возвращается примерно на прежнее место.
 
-панель должна показать:
 
-`Скачать файлы клиента ZIP (4)`
+## Live bug: initial 50-message window
 
-В ZIP должны быть все 4 файла клиента.
+Observed in browser:
+- chat contains 66 messages;
+- initial Pravoved render exposes only 50;
+- first F4 loader could still copy only those 50 unless the user manually scrolled to the very top first.
 
-Если юрист загрузит файл в своей ветке, счетчик и ZIP не должны увеличиться.
+Fix in v0.1.13:
+- no longer relies on a single guessed scroll container;
+- drives all plausible chat/page scroll containers to the top;
+- explicitly exposes the first message bubble with `scrollIntoView({block:"start"})`;
+- waits for an actual history change instead of a fixed 450 ms;
+- treats both message-count growth and change of the first visible message as progress;
+- repeats until four consecutive top exposures produce no older history;
+- restores the user's previous bottom-relative viewport after loading.
+
+Acceptance target:
+- on the known 66-message chat, clicking `Скопировать чат` from the initial 50-message state must automatically progress to 66 and copy all 66 without manual scrolling.
+
+
+## Live file-control bugs fixed in v0.1.16
+
+Observed:
+- `сбросить` cleared chrome.storage but the next refresh reconciled the same historical
+  Chrome downloads and immediately restored the old downloaded count;
+- a single stale/private attachment returning `ATTACHMENT_HTTP_404` aborted the entire ZIP.
+
+Reset fix:
+- chat download state now stores `historyAfter`;
+- reset sets `historyAfter` to the reset timestamp and clears ids;
+- browser download-history reconciliation ignores downloads older than that cutoff;
+- the cutoff persists across page reloads.
+
+ZIP fix:
+- page-context fetch tries the original URL, `?source=dialog`, and canonical upload URL;
+- each file is fetched independently;
+- one 404 no longer aborts the complete ZIP;
+- available files are packed and downloaded;
+- failed attachment IDs remain unmarked, so they stay visible for retry;
+- UI reports partial success, e.g. `ZIP: 18/19; пропущено: 1`.
+
+Acceptance:
+- clicking `сбросить` must reduce downloaded count to zero and expose the current files again;
+- downloading a batch with one 404 must still download a ZIP containing all accessible files.

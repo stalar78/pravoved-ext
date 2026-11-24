@@ -8,6 +8,7 @@
   let activeChatId = null;
   let downloadedIds = new Set();
   let historyCheckedIds = new Set();
+  let historyAfter = null;
   let lastSignature = null;
   let refreshInFlight = false;
   let lifecycleStarted = false;
@@ -48,7 +49,8 @@
 
     const result = await sendRuntimeMessage({
       type: "PRAVOVED_FIND_COMPLETED_UPLOADS",
-      uploadIds
+      uploadIds,
+      historyAfter
     });
 
     return result && Array.isArray(result.completedIds)
@@ -132,10 +134,16 @@
   }
 
   async function loadChatState(chatId) {
-    const ids = await root.chatStorage.getDownloadedIds(chatId);
+    const state = root.chatStorage.getState
+      ? await root.chatStorage.getState(chatId)
+      : {
+        ids: await root.chatStorage.getDownloadedIds(chatId),
+        historyAfter: null
+      };
 
     activeChatId = chatId;
-    downloadedIds = new Set(ids.map(String));
+    downloadedIds = new Set((state.ids || []).map(String));
+    historyAfter = state.historyAfter || null;
     historyCheckedIds = new Set();
     lastSignature = null;
   }
@@ -188,6 +196,7 @@
         activeChatId = null;
         downloadedIds = new Set();
         historyCheckedIds = new Set();
+        historyAfter = null;
         lastSignature = null;
         root.chatUi.remove(document);
         return;
@@ -216,13 +225,38 @@
         chatId,
         newAttachments,
         downloadedCount: downloadedIds.size,
-        onDownload: (batch, onProgress) => downloadNewBatch(chatId, batch, onProgress),
-        onDownloaded: async (batch) => {
-          const ids = batch.map((item) => String(item.id));
-          const result = await root.chatStorage.markDownloaded(chatId, ids);
+        onCopyChat: (onProgress) => {
+          if (!root.chatTranscript || typeof root.chatTranscript.copyFullChat !== "function") {
+            return Promise.resolve({
+              ok: false,
+              reason: "CHAT_TRANSCRIPT_MODULE_UNAVAILABLE",
+              messageCount: 0
+            });
+          }
 
-          if (result && result.ok) {
-            ids.forEach((id) => downloadedIds.add(id));
+          return root.chatTranscript.copyFullChat(
+            document,
+            global.location,
+            onProgress
+          );
+        },
+        onDownload: (batch, onProgress) => downloadNewBatch(chatId, batch, onProgress),
+        onDownloaded: async (batch, downloadResult) => {
+          const completedSet = downloadResult
+            && Array.isArray(downloadResult.completedIds)
+            && downloadResult.completedIds.length > 0
+            ? new Set(downloadResult.completedIds.map(String))
+            : null;
+          const ids = batch
+            .map((item) => String(item.id))
+            .filter((id) => !completedSet || completedSet.has(id));
+
+          if (ids.length > 0) {
+            const result = await root.chatStorage.markDownloaded(chatId, ids);
+
+            if (result && result.ok) {
+              ids.forEach((id) => downloadedIds.add(id));
+            }
           }
 
           lastSignature = null;
@@ -234,6 +268,7 @@
           if (result && result.ok) {
             downloadedIds = new Set();
             historyCheckedIds = new Set();
+            historyAfter = result.historyAfter || new Date().toISOString();
             lastSignature = null;
             await refresh();
           }
